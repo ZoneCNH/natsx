@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZoneCNH/xlib-standard/internal/debtcheck"
-	"github.com/ZoneCNH/xlib-standard/internal/releasequality"
+	"github.com/ZoneCNH/natsx/internal/debtcheck"
+	"github.com/ZoneCNH/natsx/internal/releasequality"
 )
 
 var checkNames = []string{

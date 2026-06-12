@@ -1,3 +1,3 @@
-module github.com/ZoneCNH/xlib-standard
+module github.com/ZoneCNH/natsx
 
 go 1.23

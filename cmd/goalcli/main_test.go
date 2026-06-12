@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ZoneCNH/xlib-standard/internal/goalruntime"
-	"github.com/ZoneCNH/xlib-standard/internal/releasequality"
-	"github.com/ZoneCNH/xlib-standard/pkg/templatex"
+	"github.com/ZoneCNH/natsx/internal/goalruntime"
+	"github.com/ZoneCNH/natsx/internal/releasequality"
+	"github.com/ZoneCNH/natsx/pkg/templatex"
 )
 
 func TestMainDispatchesUsageHelpAndUnknownCommand(t *testing.T) {
@@ -972,7 +972,7 @@ func TestRunExternalErrorPaths(t *testing.T) {
 func TestRunDoctorAllowsRenderedDownstreamWithoutSourceGoal(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
-		"go.mod":                                "module github.com/ZoneCNH/kernel\n\nreplace github.com/ZoneCNH/xlib-standard => ../xlib-standard\n",
+		"go.mod":                                "module github.com/ZoneCNH/kernel\n\nreplace github.com/ZoneCNH/natsx => ../xlib-standard\n",
 		".agent/harness.yaml":                   "checks: [version, doctor]\n",
 		".agent/issue-registry.yaml":            issueRegistryFixture("P0-001", "P1-001", "P2-001", "CTX-001"),
 		".agent/command-registry.yaml":          "commands: [version, doctor]\n",

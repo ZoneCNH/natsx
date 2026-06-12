@@ -1,10 +1,10 @@
-# xlib-standard
+# natsx
 
-`xlib-standard` 是基础库标准与交付运行时仓库，承担五类职责：**Standard Source**、**Go Reference Template**、**Generator**、**Harness** 和 **Evidence Runtime**。它把基础库的公共 API、配置、错误、健康检查、metrics、测试、release Evidence、Goal Runtime 和下游生成规则放在同一套可验证工件中维护。
+`natsx` 是基础库标准与交付运行时仓库，承担五类职责：**Standard Source**、**Go Reference Template**、**Generator**、**Harness** 和 **Evidence Runtime**。它把基础库的公共 API、配置、错误、健康检查、metrics、测试、release Evidence、Goal Runtime 和下游生成规则放在同一套可验证工件中维护。
 
 旧名 `baselib-template` 和示例名 `foundationx` 只允许出现在迁移文档语境中；新的默认下游集成目标是 `kernel`，生成库包括 `configx`、`observex`、`testkitx`、`postgresx`、`redisx`、`kafkax`、`taosx`、`ossx` 和 `clickhousex`。
 
-标准源仓库 URL 为 [`xlib-standard`](https://github.com/ZoneCNH/xlib-standard)。本仓库不再把标准源与模板实现拆成两个角色：标准文本、模板、generator、Harness gate 和 Evidence runtime 必须一起通过 release gate 验证。
+标准源仓库 URL 为 [`natsx`](https://github.com/ZoneCNH/natsx)。本仓库不再把标准源与模板实现拆成两个角色：标准文本、模板、generator、Harness gate 和 Evidence runtime 必须一起通过 release gate 验证。
 
 ## 五类职责
 
@@ -37,11 +37,11 @@
 ## 文档入口
 
 - [基础库标准索引](docs/standard/README.md)：P0 标准入口，覆盖仓库角色、分层、DoD、Harness、Evidence、release、安全和 generator 契约。
-- [基础库总标准](docs/standard/xlib-standard.md)：同步 [`xlib-standard`](https://github.com/ZoneCNH/xlib-standard) 的公共 API、配置、错误、健康检查、metrics、测试、安全和发布规则。
-- [仓库角色](docs/standard/repository-roles.md)：区分 `xlib-standard`、`kernel`、生成基础库和 `x.go`。
+- [基础库总标准](docs/standard/xlib-standard.md)：同步 [`natsx`](https://github.com/ZoneCNH/natsx) 的公共 API、配置、错误、健康检查、metrics、测试、安全和发布规则。
+- [仓库角色](docs/standard/repository-roles.md)：区分 `natsx`、`kernel`、生成基础库和 `x.go`。
 - [模块边界](docs/standard/module-boundary.md)：定义标准、模板、generator、Harness、Evidence 与下游库边界。
 - [下游矩阵](docs/downstream-matrix.md)：列出 `kernel` 与所有目标库的 module path、package、layer、允许依赖和禁止依赖。
-- [下游同步策略](docs/downstream-sync-policy.md)：定义 `xlib-standard` 变更如何同步到 `kernel`、L1/L2 基础库，以及 `x.go` 的消费方边界。
+- [下游同步策略](docs/downstream-sync-policy.md)：定义 `natsx` 变更如何同步到 `kernel`、L1/L2 基础库，以及 `x.go` 的消费方边界。
 - [x.go 集成边界](docs/xgo-integration-boundary.md)：说明 `x.go` 只能作为调用方组合层，基础库不得反向依赖。
 - [迁移指南](docs/migration/baselib-template-to-xlib-standard.md)：记录旧名到新身份的迁移规则。
 - [Harness gate](docs/standard/harness-gates.md)：required、extended、generator、docs、score 和 final gate 命令。
