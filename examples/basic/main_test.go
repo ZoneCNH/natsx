@@ -6,12 +6,12 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ZoneCNH/xlib-standard/pkg/templatex"
+	"github.com/ZoneCNH/natsx/pkg/templatex"
 )
 
 func TestMainPrintsModuleName(t *testing.T) {
 	output := captureStdout(t, main)
-	if output != "github.com/ZoneCNH/xlib-standard\n" {
+	if output != "github.com/ZoneCNH/natsx\n" {
 		t.Fatalf("unexpected output: %q", output)
 	}
 }
