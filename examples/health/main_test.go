@@ -2,59 +2,48 @@ package main
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"testing"
 
-	"github.com/ZoneCNH/natsx/pkg/templatex"
+	"github.com/ZoneCNH/natsx/examples/internal/embeddednats"
+	"github.com/ZoneCNH/natsx/pkg/natsx"
 )
 
-func TestMainPrintsHealthyStatus(t *testing.T) {
-	output := captureStdout(t, main)
-	if output != "healthy\n" {
-		t.Fatalf("unexpected output: %q", output)
-	}
-}
+func TestRunPrintsHealthyStatus(t *testing.T) {
+	var stdout bytes.Buffer
 
-func TestRunReportsInvalidConfig(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-
-	run(&stdout, &stderr, templatex.Config{})
-
-	if stdout.String() != "" {
-		t.Fatalf("unexpected stdout: %q", stdout.String())
-	}
-	if stderr.String() != "create client: validation: Config.Validate: name is required\n" {
-		t.Fatalf("unexpected stderr: %q", stderr.String())
-	}
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	original := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
-	}
-	os.Stdout = w
-	t.Cleanup(func() {
-		os.Stdout = original
+	err := run(&stdout, natsx.Config{
+		Name: "natsx-health-example-test",
+		URL:  embeddednats.Run(t, false),
 	})
-
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stdout writer: %v", err)
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
 	}
-	os.Stdout = original
 
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("read stdout: %v", err)
+	if stdout.String() != "healthy\n" {
+		t.Fatalf("stdout = %q, want healthy", stdout.String())
 	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("close stdout reader: %v", err)
+}
+
+func TestConfigFromEnvRequiresURL(t *testing.T) {
+	t.Setenv("NATS_URL", "")
+
+	if _, err := configFromEnv(); err == nil {
+		t.Fatal("configFromEnv() error = nil, want error")
 	}
-	return buf.String()
+}
+
+func TestConfigFromEnvUsesNATSURL(t *testing.T) {
+	const url = "nats://127.0.0.1:4222"
+	t.Setenv("NATS_URL", url)
+
+	cfg, err := configFromEnv()
+	if err != nil {
+		t.Fatalf("configFromEnv() error = %v", err)
+	}
+	if cfg.URL != url {
+		t.Fatalf("URL = %q, want %q", cfg.URL, url)
+	}
+	if cfg.Name == "" {
+		t.Fatal("Name is empty")
+	}
 }

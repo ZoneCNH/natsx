@@ -2,44 +2,34 @@ package main
 
 import (
 	"bytes"
-	"io"
-	"os"
+	"strings"
 	"testing"
 )
 
-func TestMainPrintsRedactedSecret(t *testing.T) {
-	output := captureStdout(t, main)
-	if output != "***\n" {
-		t.Fatalf("unexpected output: %q", output)
-	}
-}
+func TestRunPrintsSanitizedConfig(t *testing.T) {
+	var stdout bytes.Buffer
 
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	original := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("create stdout pipe: %v", err)
+	if err := run(&stdout); err != nil {
+		t.Fatalf("run() error = %v", err)
 	}
-	os.Stdout = w
-	t.Cleanup(func() {
-		os.Stdout = original
-	})
 
-	fn()
-
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stdout writer: %v", err)
+	output := stdout.String()
+	for _, secret := range []string{"password-value", "token-value", "seed-value", "nats.creds"} {
+		if strings.Contains(output, secret) {
+			t.Fatalf("output leaked %q: %q", secret, output)
+		}
 	}
-	os.Stdout = original
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, r); err != nil {
-		t.Fatalf("read stdout: %v", err)
+	for _, redacted := range []string{
+		"credential=***",
+		"password_secret=***",
+		"nkey=***",
+		"creds=***",
+	} {
+		if !strings.Contains(output, redacted) {
+			t.Fatalf("output = %q, want %q", output, redacted)
+		}
 	}
-	if err := r.Close(); err != nil {
-		t.Fatalf("close stdout reader: %v", err)
+	if !strings.Contains(output, "username=user") {
+		t.Fatalf("output = %q, want non-secret username", output)
 	}
-	return buf.String()
 }
