@@ -10,9 +10,9 @@ This repository is being repaired from an old base-library template into the rea
 | Area | Current state | Release meaning |
 | --- | --- | --- |
 | Spec intent | `module/natsx/SPEC.md` and `goal.md` define the NATS 1.0 contract. | Source of target API and acceptance criteria. |
-| Implemented state | Active implementation work is expected under `pkg/natsx`; legacy `pkg/templatex` remains in this checkout. | Do not count `pkg/templatex` as NATS 1.0 evidence. |
+| Implemented state | `pkg/natsx` now exposes a working repair baseline for config, lifecycle, Core NATS publish/subscribe/request/queue, JetStream admin/publish/pull, envelopes, subjects, health, errors, and metrics. Legacy `pkg/templatex` remains in this checkout. | Count only `pkg/natsx` executable evidence toward NATS 1.0; do not count `pkg/templatex`. |
 | Examples | Existing Go examples still exercise legacy template behavior; `examples/README.md` defines the replacement set. | Existing examples are compile smoke only until migrated to `pkg/natsx`. |
-| Traceability | `module/natsx/TRACEABILITY.md` remains Draft / Pending Evidence until Core NATS and JetStream tests exist. | Do not mark 100/100 on documentation-only evidence. |
+| Traceability | Embedded NATS tests now cover the Core NATS and JetStream repair baseline; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while redelivery/DLQ, reconnect policy, examples, and benchmark evidence remain open. |
 
 The inherited base-library release governance metadata remains on `v0.4.6` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
 
@@ -30,26 +30,28 @@ The inherited base-library release governance metadata remains on `v0.4.6` while
 
 ## Public API baseline
 
-The stable 1.0 API is documented in `/home/ZoneCNH/module/natsx/goal.md` and `/home/ZoneCNH/module/natsx/SPEC.md`. Implementations should expose these logical contracts from `pkg/natsx`:
+The stable 1.0 API is documented in `/home/ZoneCNH/module/natsx/goal.md` and `/home/ZoneCNH/module/natsx/SPEC.md`. The current repair baseline exposes these concrete contracts from `pkg/natsx`:
 
 ```go
-type NatsPubSubClient interface {
-    Publish(ctx context.Context, subject string, msg NatsMessageEnvelope) (PublishResult, error)
-    Subscribe(ctx context.Context, subject string, handler NatsMessageHandler, opts ...SubscribeOption) (Subscription, error)
+type Handler func(context.Context, Envelope) (Envelope, error)
+
+type Client struct {
+    // created by New(ctx, Config)
 }
 
-type NatsRequestClient interface {
-    Request(ctx context.Context, subject string, msg NatsMessageEnvelope, timeout time.Duration) (NatsMessageEnvelope, error)
-    Reply(ctx context.Context, subject string, handler NatsMessageHandler) (Subscription, error)
-}
+func New(ctx context.Context, cfg Config) (*Client, error)
+func (c *Client) Publish(ctx context.Context, env Envelope) error
+func (c *Client) Request(ctx context.Context, env Envelope) (Envelope, error)
+func (c *Client) Subscribe(subject string, handler Handler) (*nats.Subscription, error)
+func (c *Client) QueueSubscribe(subject, queue string, handler Handler) (*nats.Subscription, error)
+func (c *Client) JetStream() (*JetStreamClient, error)
 
-type JetStreamClientX interface {
-    Publish(ctx context.Context, stream string, subject string, msg NatsMessageEnvelope) (*PublishAck, error)
-    Consume(ctx context.Context, stream string, consumer string, handler NatsMessageHandler) (ConsumerHandle, error)
-    AddStream(ctx context.Context, cfg *StreamConfig) error
-    AddConsumer(ctx context.Context, stream string, cfg *ConsumerConfig) error
+type JetStreamClient struct {
+    // wraps nats.JetStreamContext
 }
 ```
+
+Target 1.0 gaps still include higher-level consumer handles, explicit redelivery/DLQ policy helpers, reconnect/backoff evidence, migrated examples, and benchmark evidence.
 
 ## Installation
 
@@ -63,11 +65,11 @@ The implementation depends on the official Go NATS client and must be testable w
 
 ```go
 ctx := context.Background()
-client, err := natsx.Connect(ctx,
-    natsx.WithServers([]string{"nats://127.0.0.1:4222"}),
-    natsx.WithClientName("orders-api"),
-    natsx.WithRequestTimeout(time.Second),
-)
+client, err := natsx.New(ctx, natsx.Config{
+    Name:    "orders-api",
+    URL:     "nats://127.0.0.1:4222",
+    Timeout: time.Second,
+})
 if err != nil {
     return err
 }
@@ -78,12 +80,13 @@ if err != nil {
     return err
 }
 
-_, err = client.Publish(ctx, subject, natsx.NatsMessageEnvelope{
+err = client.Publish(ctx, natsx.Envelope{
+    Subject:       subject,
     EventID:       "evt-123",
     MessageID:     "msg-123",
     SchemaVersion: "orders.created.v1",
     TraceID:       "trace-abc",
-    Payload:       []byte(`{"orderId":"o-1"}`),
+    Data:          []byte(`{"orderId":"o-1"}`),
 })
 return err
 ```
@@ -127,7 +130,9 @@ Credentials, tokens, passwords, and connection URLs with embedded secrets must b
 Required local checks for this repository:
 
 ```bash
-GOWORK=off go test ./...
+GOWORK=off go test ./pkg/natsx -count=1
+GOWORK=off go test -race ./pkg/natsx -count=1
+GOWORK=off go test ./... -count=1
 git diff --check
 ```
 
@@ -143,5 +148,7 @@ A 100/100 release also requires embedded NATS integration evidence for Core NATS
 
 - Target branch: `natsx`.
 - Primary package target: `pkg/natsx`.
+- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue and JetStream stream admin, publish, pull, envelope metadata, and ack paths.
 - Known legacy residue: `pkg/templatex`, goal-runtime generator assets, and old examples remain until the implementation slice replaces them.
+- Remaining release gaps: migrated examples, explicit redelivery/DLQ policy evidence, reconnect/backoff evidence, benchmark/SLO evidence, and full consumer lifecycle API polish.
 - `/home/natsx/docs/l2/` is intentionally excluded from this repair unless the leader explicitly expands scope.

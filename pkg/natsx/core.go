@@ -2,10 +2,13 @@ package natsx
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/nats-io/nats.go"
 )
+
+type Handler func(context.Context, Envelope) (Envelope, error)
 
 func (c *Client) Publish(ctx context.Context, env Envelope) error {
 	const op = "natsx.Publish"
@@ -49,8 +52,19 @@ func (c *Client) Request(ctx context.Context, env Envelope) (Envelope, error) {
 	return EnvelopeFromMsg(msg), nil
 }
 
-func (c *Client) Subscribe(subject string, handler func(context.Context, Envelope) (Envelope, error)) (*nats.Subscription, error) {
-	const op = "natsx.Subscribe"
+func (c *Client) Subscribe(subject string, handler Handler) (*nats.Subscription, error) {
+	return c.subscribe("natsx.Subscribe", subject, "", handler)
+}
+
+func (c *Client) QueueSubscribe(subject, queue string, handler Handler) (*nats.Subscription, error) {
+	const op = "natsx.QueueSubscribe"
+	if strings.TrimSpace(queue) == "" {
+		return nil, validationError(op, "queue is required", nil)
+	}
+	return c.subscribe(op, subject, queue, handler)
+}
+
+func (c *Client) subscribe(op, subject, queue string, handler Handler) (*nats.Subscription, error) {
 	if c == nil || c.conn == nil {
 		return nil, validationError(op, "client is not connected", nil)
 	}
@@ -60,13 +74,33 @@ func (c *Client) Subscribe(subject string, handler func(context.Context, Envelop
 	if handler == nil {
 		return nil, validationError(op, "handler is required", nil)
 	}
-	sub, err := c.conn.Subscribe(subject, func(msg *nats.Msg) {
+	callback := func(msg *nats.Msg) {
 		reply, err := handler(context.Background(), EnvelopeFromMsg(msg))
-		if msg.Reply != "" && err == nil {
-			_ = msg.RespondMsg(reply.ToMsg())
+		if err != nil {
+			wrapped := WrapError(ErrorKindInternal, op, "handler returned error", false, err)
+			recordErrorMetric(c.metrics, "subscribe", wrapped)
+			return
+		}
+		if msg.Reply != "" {
+			replyMsg := reply.ToMsg()
+			replyMsg.Subject = msg.Reply
+			if err := msg.RespondMsg(replyMsg); err != nil {
+				wrapped := connectionError(op, err)
+				recordErrorMetric(c.metrics, "subscribe", wrapped)
+				return
+			}
 		}
 		c.metrics.IncCounter(MetricCoreMessagesTotal, map[string]string{"op": "subscribe", "subject": subject})
-	})
+	}
+	var (
+		sub *nats.Subscription
+		err error
+	)
+	if queue == "" {
+		sub, err = c.conn.Subscribe(subject, callback)
+	} else {
+		sub, err = c.conn.QueueSubscribe(subject, queue, callback)
+	}
 	if err != nil {
 		wrapped := connectionError(op, err)
 		recordErrorMetric(c.metrics, "subscribe", wrapped)

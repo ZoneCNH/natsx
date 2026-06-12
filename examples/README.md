@@ -20,13 +20,13 @@ This directory is reserved for executable examples of the `pkg/natsx` public API
 
 ## Current status
 
-The Go files currently present under `examples/` still compile against legacy `pkg/templatex` and are intentionally treated as repair debt, not 1.0 natsx API evidence. They should be replaced when `pkg/natsx` implementation and embedded NATS tests are available.
+The Go files currently present under `examples/` still compile against legacy `pkg/templatex` and are intentionally treated as repair debt, not 1.0 natsx API evidence. `pkg/natsx` now has embedded NATS tests for the Core NATS and JetStream baseline, but examples must still be migrated before they can be promoted to release evidence.
 
 | Example | Current file state | Target owner/slice | Evidence status |
 | --- | --- | --- | --- |
-| `basic` | `examples/basic` imports `pkg/templatex` | Core NATS implementation + example migration | `legacy-templatex`; not 1.0 evidence |
-| `config` | `examples/config` imports `pkg/templatex` | Config/options + redaction migration | `legacy-templatex`; not 1.0 evidence |
-| `health` | `examples/health` imports `pkg/templatex` | Lifecycle/health migration | `legacy-templatex`; not 1.0 evidence |
-| `jetstream` | directory not present yet | JetStream implementation + embedded NATS test slice | `blocked`; create when API exists |
+| `basic` | `examples/basic` imports `pkg/templatex` | Core NATS example migration | `legacy-templatex`; embedded baseline covered by `pkg/natsx` tests only |
+| `config` | `examples/config` imports `pkg/templatex` | Config/options + redaction example migration | `legacy-templatex`; package tests cover config/redaction only |
+| `health` | `examples/health` imports `pkg/templatex` | Lifecycle/health example migration | `legacy-templatex`; package tests cover lifecycle/health only |
+| `jetstream` | directory not present yet | JetStream example migration | embedded baseline covered by `pkg/natsx` tests only |
 
 Replacement examples must only be promoted to release evidence after their tests import `pkg/natsx`, run against embedded/local NATS, and are linked from `/home/ZoneCNH/module/natsx/TRACEABILITY.md`.
