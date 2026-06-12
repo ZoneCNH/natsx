@@ -10,7 +10,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-func runEmbeddedNATSServer(t *testing.T, jetStream bool) *natsserver.Server {
+func runEmbeddedNATSServer(t testing.TB, jetStream bool) *natsserver.Server {
 	t.Helper()
 
 	opts := &natsserver.Options{
@@ -39,7 +39,7 @@ func runEmbeddedNATSServer(t *testing.T, jetStream bool) *natsserver.Server {
 	return srv
 }
 
-func newEmbeddedClient(t *testing.T, srv *natsserver.Server, enableJetStream bool) *Client {
+func newEmbeddedClient(t testing.TB, srv *natsserver.Server, enableJetStream bool) *Client {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -67,7 +67,7 @@ func newEmbeddedClient(t *testing.T, srv *natsserver.Server, enableJetStream boo
 	return client
 }
 
-func mustSubject(t *testing.T, domain, resource, action string, version int) string {
+func mustSubject(t testing.TB, domain, resource, action string, version int) string {
 	t.Helper()
 
 	subject, err := Subject().Build(domain, resource, action, version)
@@ -83,6 +83,22 @@ func headerValue(headers map[string][]string, key string) string {
 		return ""
 	}
 	return values[0]
+}
+
+func waitForCondition(t testing.TB, timeout time.Duration, condition func() bool, format string, args ...interface{}) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if condition() {
+		return
+	}
+	t.Fatalf(format, args...)
 }
 
 func TestEmbeddedNATSCorePublishRequestAndQueue(t *testing.T) {
@@ -247,6 +263,97 @@ func TestEmbeddedNATSRequestNoResponder(t *testing.T) {
 	}
 }
 
+func TestEmbeddedNATSCoreTimeoutUnsubscribeDrainAndHealth(t *testing.T) {
+	srv := runEmbeddedNATSServer(t, false)
+	client := newEmbeddedClient(t, srv, false)
+
+	health := client.HealthCheck(context.Background())
+	if health.Status != HealthHealthy {
+		t.Fatalf("HealthCheck() status = %q, want healthy: %s", health.Status, health.Message)
+	}
+	if health.Metadata["server_url"] == "" {
+		t.Fatalf("HealthCheck() server_url metadata is empty: %+v", health.Metadata)
+	}
+
+	timeoutSubject := mustSubject(t, "orders", "slow", "request", 1)
+	timeoutSub, err := client.Subscribe(timeoutSubject, func(_ context.Context, _ Envelope) (Envelope, error) {
+		time.Sleep(200 * time.Millisecond)
+		return Envelope{Data: []byte("late")}, nil
+	})
+	if err != nil {
+		t.Fatalf("Subscribe(timeout) error = %v", err)
+	}
+	defer timeoutSub.Unsubscribe()
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() after timeout subscribe error = %v", err)
+	}
+
+	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer timeoutCancel()
+	if _, err := client.Request(timeoutCtx, Envelope{Subject: timeoutSubject, Data: []byte("slow")}); !IsKind(err, ErrorKindTimeout) {
+		t.Fatalf("Request(timeout) error = %v, want timeout kind", err)
+	}
+
+	canceledCtx, canceledCancel := context.WithCancel(context.Background())
+	canceledCancel()
+	if _, err := client.Request(canceledCtx, Envelope{Subject: timeoutSubject, Data: []byte("cancel")}); !IsKind(err, ErrorKindUnavailable) {
+		t.Fatalf("Request(canceled) error = %v, want unavailable kind", err)
+	}
+
+	unsubscribeSubject := mustSubject(t, "orders", "gone", "publish", 1)
+	delivered := make(chan Envelope, 1)
+	unsubscribeSub, err := client.Subscribe(unsubscribeSubject, func(_ context.Context, env Envelope) (Envelope, error) {
+		delivered <- env
+		return Envelope{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Subscribe(unsubscribe) error = %v", err)
+	}
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() before unsubscribe error = %v", err)
+	}
+	if err := unsubscribeSub.Unsubscribe(); err != nil {
+		t.Fatalf("Unsubscribe() error = %v", err)
+	}
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() after unsubscribe error = %v", err)
+	}
+	publishCtx, publishCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer publishCancel()
+	if err := client.Publish(publishCtx, Envelope{Subject: unsubscribeSubject, Data: []byte("gone")}); err != nil {
+		t.Fatalf("Publish(after unsubscribe) error = %v", err)
+	}
+	select {
+	case env := <-delivered:
+		t.Fatalf("received message after unsubscribe: %+v", env)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer closeCancel()
+	closeClient, err := New(closeCtx, Config{
+		Name:         "natsx-close-test",
+		URL:          srv.ClientURL(),
+		Timeout:      2 * time.Second,
+		DrainTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New(close client) error = %v", err)
+	}
+	drainCtx, drainCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer drainCancel()
+	if err := closeClient.Close(drainCtx); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	waitForCondition(t, 500*time.Millisecond, func() bool {
+		return closeClient.Conn().IsClosed()
+	}, "Close() left NATS connection open")
+	closedHealth := closeClient.HealthCheck(context.Background())
+	if closedHealth.Status != HealthUnhealthy {
+		t.Fatalf("HealthCheck(closed) status = %q, want unhealthy", closedHealth.Status)
+	}
+}
+
 func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	srv := runEmbeddedNATSServer(t, true)
 	client := newEmbeddedClient(t, srv, true)
@@ -288,8 +395,19 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	if streamInfo.Config.Name != "ORDERS" {
 		t.Fatalf("StreamInfo() stream name = %q, want ORDERS", streamInfo.Config.Name)
 	}
+	if _, err := jsClient.StreamInfo("MISSING"); !IsKind(err, ErrorKindUnavailable) {
+		t.Fatalf("StreamInfo(missing) error = %v, want unavailable kind", err)
+	}
+	if err := jsClient.DeleteStream(" "); !IsKind(err, ErrorKindValidation) {
+		t.Fatalf("DeleteStream(blank) error = %v, want validation kind", err)
+	}
 
 	jetStreamSubject := mustSubject(t, "orders", "created", "publish", 1)
+	missingStreamSubject := mustSubject(t, "unknown", "created", "publish", 1)
+	if _, err := jsClient.Publish(Envelope{Subject: missingStreamSubject, Data: []byte("missing")}); !IsKind(err, ErrorKindUnavailable) {
+		t.Fatalf("JetStream Publish(missing stream) error = %v, want unavailable kind", err)
+	}
+
 	consumerConfig := &ConsumerConfig{
 		Durable:       "worker-b",
 		AckPolicy:     nats.AckExplicitPolicy,

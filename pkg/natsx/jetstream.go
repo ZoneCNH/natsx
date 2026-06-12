@@ -3,6 +3,7 @@ package natsx
 import (
 	"errors"
 	"reflect"
+	"strings"
 
 	"github.com/nats-io/nats.go"
 )
@@ -30,7 +31,8 @@ func (j *JetStreamClient) AddStream(cfg *StreamConfig) (*nats.StreamInfo, error)
 	if cfg == nil {
 		return nil, validationError("natsx.AddStream", "stream config is required", nil)
 	}
-	if cfg.Name == "" {
+	name := strings.TrimSpace(cfg.Name)
+	if name == "" {
 		return nil, validationError("natsx.AddStream", "stream name is required", nil)
 	}
 	stream, err := j.js.AddStream(cfg)
@@ -38,38 +40,54 @@ func (j *JetStreamClient) AddStream(cfg *StreamConfig) (*nats.StreamInfo, error)
 		return stream, nil
 	}
 	if errors.Is(err, nats.ErrStreamNameAlreadyInUse) {
-		existing, infoErr := j.js.StreamInfo(cfg.Name)
+		existing, infoErr := j.js.StreamInfo(name)
 		if infoErr == nil && existing != nil && streamConfigMatches(cfg, &existing.Config) {
 			return existing, nil
 		}
 		return nil, conflictError("natsx.AddStream", err)
 	}
-	return nil, connectionError("natsx.AddStream", err)
+	return nil, jetStreamError("natsx.AddStream", err)
 }
 func (j *JetStreamClient) DeleteStream(name string) error {
 	if j == nil || j.js == nil {
 		return validationError("natsx.DeleteStream", "jetstream is not initialized", nil)
 	}
-	return j.js.DeleteStream(name)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return validationError("natsx.DeleteStream", "stream name is required", nil)
+	}
+	if err := j.js.DeleteStream(name); err != nil {
+		return jetStreamError("natsx.DeleteStream", err)
+	}
+	return nil
 }
 func (j *JetStreamClient) StreamInfo(name string) (*nats.StreamInfo, error) {
 	if j == nil || j.js == nil {
 		return nil, validationError("natsx.StreamInfo", "jetstream is not initialized", nil)
 	}
-	return j.js.StreamInfo(name)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, validationError("natsx.StreamInfo", "stream name is required", nil)
+	}
+	stream, err := j.js.StreamInfo(name)
+	if err != nil {
+		return nil, jetStreamError("natsx.StreamInfo", err)
+	}
+	return stream, nil
 }
 func (j *JetStreamClient) AddConsumer(stream string, cfg *ConsumerConfig) (*nats.ConsumerInfo, error) {
 	if j == nil || j.js == nil {
 		return nil, validationError("natsx.AddConsumer", "jetstream is not initialized", nil)
 	}
-	if stream == "" {
+	streamName := strings.TrimSpace(stream)
+	if streamName == "" {
 		return nil, validationError("natsx.AddConsumer", "stream name is required", nil)
 	}
 	if cfg == nil {
 		return nil, validationError("natsx.AddConsumer", "consumer config is required", nil)
 	}
 	if name := consumerConfigName(cfg); name != "" {
-		existing, infoErr := j.js.ConsumerInfo(stream, name)
+		existing, infoErr := j.js.ConsumerInfo(streamName, name)
 		if infoErr == nil && existing != nil {
 			if consumerConfigMatches(cfg, &existing.Config) {
 				return existing, nil
@@ -77,17 +95,23 @@ func (j *JetStreamClient) AddConsumer(stream string, cfg *ConsumerConfig) (*nats
 			return nil, conflictError("natsx.AddConsumer", nats.ErrConsumerNameAlreadyInUse)
 		}
 		if infoErr != nil && !errors.Is(infoErr, nats.ErrConsumerNotFound) {
-			return nil, connectionError("natsx.AddConsumer", infoErr)
+			return nil, jetStreamError("natsx.AddConsumer", infoErr)
 		}
 	}
-	consumer, err := j.js.AddConsumer(stream, cfg)
+	consumer, err := j.js.AddConsumer(streamName, cfg)
 	if err == nil {
 		return consumer, nil
 	}
 	if errors.Is(err, nats.ErrConsumerNameAlreadyInUse) {
+		if name := consumerConfigName(cfg); name != "" {
+			existing, infoErr := j.js.ConsumerInfo(streamName, name)
+			if infoErr == nil && existing != nil && consumerConfigMatches(cfg, &existing.Config) {
+				return existing, nil
+			}
+		}
 		return nil, conflictError("natsx.AddConsumer", err)
 	}
-	return nil, connectionError("natsx.AddConsumer", err)
+	return nil, jetStreamError("natsx.AddConsumer", err)
 }
 func (j *JetStreamClient) Publish(env Envelope, opts ...nats.PubOpt) (*PubAck, error) {
 	if j == nil || j.js == nil {
@@ -98,7 +122,7 @@ func (j *JetStreamClient) Publish(env Envelope, opts ...nats.PubOpt) (*PubAck, e
 	}
 	ack, err := j.js.PublishMsg(env.ToMsg(), opts...)
 	if err != nil {
-		return nil, connectionError("natsx.JetStreamPublish", err)
+		return nil, jetStreamError("natsx.JetStreamPublish", err)
 	}
 	if j.client != nil {
 		j.client.metrics.IncCounter(MetricJetStreamMessagesTotal, map[string]string{"op": "publish", "subject": env.Subject})
@@ -109,24 +133,55 @@ func (j *JetStreamClient) PullSubscribe(subject, durable string, opts ...nats.Su
 	if j == nil || j.js == nil {
 		return nil, validationError("natsx.PullSubscribe", "jetstream is not initialized", nil)
 	}
+	subject = strings.TrimSpace(subject)
 	if err := ValidateSubject("natsx.PullSubscribe", subject); err != nil {
 		return nil, err
 	}
-	return j.js.PullSubscribe(subject, durable, opts...)
+	if durable != "" {
+		durable = strings.TrimSpace(durable)
+		if durable == "" {
+			return nil, validationError("natsx.PullSubscribe", "consumer durable is invalid", nil)
+		}
+	}
+	sub, err := j.js.PullSubscribe(subject, durable, opts...)
+	if err != nil {
+		return nil, jetStreamError("natsx.PullSubscribe", err)
+	}
+	return sub, nil
 }
 
 func conflictError(op string, cause error) *Error {
 	return WrapError(ErrorKindConflict, op, "", false, cause)
 }
 
+func jetStreamError(op string, cause error) error {
+	if cause == nil {
+		return nil
+	}
+	if errors.Is(cause, nats.ErrStreamNameAlreadyInUse) || errors.Is(cause, nats.ErrConsumerNameAlreadyInUse) {
+		return conflictError(op, cause)
+	}
+	if errors.Is(cause, nats.ErrStreamNotFound) ||
+		errors.Is(cause, nats.ErrConsumerNotFound) ||
+		errors.Is(cause, nats.ErrNoStreamResponse) ||
+		errors.Is(cause, nats.ErrNoMatchingStream) ||
+		errors.Is(cause, nats.ErrJetStreamNotEnabled) ||
+		errors.Is(cause, nats.ErrJetStreamNotEnabledForAccount) ||
+		errors.Is(cause, nats.ErrConsumerDeleted) ||
+		errors.Is(cause, nats.ErrSubjectMismatch) {
+		return WrapError(ErrorKindUnavailable, op, "", true, cause)
+	}
+	return connectionError(op, cause)
+}
+
 func consumerConfigName(cfg *ConsumerConfig) string {
 	if cfg == nil {
 		return ""
 	}
-	if cfg.Name != "" {
-		return cfg.Name
+	if name := strings.TrimSpace(cfg.Name); name != "" {
+		return name
 	}
-	return cfg.Durable
+	return strings.TrimSpace(cfg.Durable)
 }
 
 func streamConfigMatches(requested, existing *StreamConfig) bool {

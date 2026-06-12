@@ -2,6 +2,7 @@ package natsx
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -36,7 +37,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	nopts := []nats.Option{nats.Name(cfg.Name), nats.Timeout(cfg.Timeout), nats.MaxReconnects(cfg.MaxReconnects), nats.ReconnectWait(cfg.ReconnectWait), nats.DisconnectErrHandler(func(_ *nats.Conn, _ error) {
+	nopts := []nats.Option{nats.Name(cfg.Name), nats.Timeout(cfg.Timeout), nats.MaxReconnects(cfg.MaxReconnects), nats.ReconnectWait(cfg.ReconnectWait), nats.DrainTimeout(cfg.DrainTimeout), nats.DisconnectErrHandler(func(_ *nats.Conn, _ error) {
 		options.metrics.IncCounter(MetricConnectionDisconnectsTotal, map[string]string{"name": cfg.Name})
 	}), nats.ReconnectHandler(func(_ *nats.Conn) {
 		options.metrics.IncCounter(MetricConnectionReconnectsTotal, map[string]string{"name": cfg.Name})
@@ -115,34 +116,56 @@ func (c *Client) JetStream() (nats.JetStreamContext, error) {
 	return js, nil
 }
 func (c *Client) Close(ctx context.Context) error {
+	const op = "natsx.Close"
 	if c == nil || c.conn == nil {
 		return nil
 	}
-	if ctx != nil && ctx.Err() != nil {
-		return contextError("natsx.Close", ctx.Err())
-	}
-	done := make(chan struct{})
-	go func() { _ = c.conn.Drain(); close(done) }()
-	timeout := c.cfg.withDefaults().DrainTimeout
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return contextError(op, err)
+	}
+	if c.conn.IsClosed() {
+		return nil
+	}
+	if err := c.conn.Drain(); err != nil {
+		if errors.Is(err, nats.ErrConnectionClosed) {
+			return nil
+		}
+		if errors.Is(err, nats.ErrConnectionReconnecting) {
+			c.conn.Close()
+		}
+		wrapped := connectionError(op, err)
+		recordErrorMetric(c.metrics, "close", wrapped)
+		return wrapped
+	}
+
+	timeout := c.cfg.withDefaults().DrainTimeout
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-	select {
-	case <-done:
-		c.metrics.IncCounter(MetricClientClosedTotal, map[string]string{"name": c.cfg.Name})
-		return nil
-	case <-ctx.Done():
-		c.conn.Close()
-		err := contextError("natsx.Close", ctx.Err())
-		recordErrorMetric(c.metrics, "close", err)
-		return err
-	case <-timer.C:
-		c.conn.Close()
-		err := WrapError(ErrorKindTimeout, "natsx.Close", "drain timeout exceeded", true, nil)
-		recordErrorMetric(c.metrics, "close", err)
-		return err
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if c.conn.IsClosed() {
+			c.metrics.IncCounter(MetricClientClosedTotal, map[string]string{"name": c.cfg.Name})
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			c.conn.Close()
+			err := contextError(op, ctx.Err())
+			recordErrorMetric(c.metrics, "close", err)
+			return err
+		case <-timer.C:
+			c.conn.Close()
+			err := WrapError(ErrorKindTimeout, op, "drain timeout exceeded", true, nil)
+			recordErrorMetric(c.metrics, "close", err)
+			return err
+		case <-ticker.C:
+		}
 	}
 }
 
