@@ -256,15 +256,30 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 		t.Fatalf("JetStreamClient() error = %v", err)
 	}
 
-	stream, err := jsClient.AddStream(&StreamConfig{
+	streamConfig := &StreamConfig{
 		Name:     "ORDERS",
 		Subjects: []string{"orders.>"},
-	})
+	}
+	stream, err := jsClient.AddStream(streamConfig)
 	if err != nil {
 		t.Fatalf("AddStream() error = %v", err)
 	}
 	if stream.Config.Name != "ORDERS" {
 		t.Fatalf("stream name = %q, want ORDERS", stream.Config.Name)
+	}
+	sameStream, err := jsClient.AddStream(streamConfig)
+	if err != nil {
+		t.Fatalf("AddStream(same config) error = %v", err)
+	}
+	if sameStream.Config.Name != "ORDERS" {
+		t.Fatalf("same stream name = %q, want ORDERS", sameStream.Config.Name)
+	}
+	_, err = jsClient.AddStream(&StreamConfig{
+		Name:     "ORDERS",
+		Subjects: []string{"orders.conflict.>"},
+	})
+	if !IsKind(err, ErrorKindConflict) {
+		t.Fatalf("AddStream(conflicting config) error = %v, want conflict kind", err)
 	}
 	streamInfo, err := jsClient.StreamInfo("ORDERS")
 	if err != nil {
@@ -275,7 +290,39 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	}
 
 	jetStreamSubject := mustSubject(t, "orders", "created", "publish", 1)
-	sub, err := jsClient.PullSubscribe(jetStreamSubject, "worker-b", nats.BindStream("ORDERS"))
+	consumerConfig := &ConsumerConfig{
+		Durable:       "worker-b",
+		AckPolicy:     nats.AckExplicitPolicy,
+		AckWait:       200 * time.Millisecond,
+		MaxDeliver:    2,
+		FilterSubject: jetStreamSubject,
+	}
+	consumer, err := jsClient.AddConsumer("ORDERS", consumerConfig)
+	if err != nil {
+		t.Fatalf("AddConsumer() error = %v", err)
+	}
+	if consumer.Config.Durable != "worker-b" {
+		t.Fatalf("consumer durable = %q, want worker-b", consumer.Config.Durable)
+	}
+	sameConsumer, err := jsClient.AddConsumer("ORDERS", consumerConfig)
+	if err != nil {
+		t.Fatalf("AddConsumer(same config) error = %v", err)
+	}
+	if sameConsumer.Config.Durable != "worker-b" {
+		t.Fatalf("same consumer durable = %q, want worker-b", sameConsumer.Config.Durable)
+	}
+	_, err = jsClient.AddConsumer("ORDERS", &ConsumerConfig{
+		Durable:       "worker-b",
+		AckPolicy:     nats.AckExplicitPolicy,
+		AckWait:       200 * time.Millisecond,
+		MaxDeliver:    2,
+		FilterSubject: mustSubject(t, "orders", "updated", "publish", 1),
+	})
+	if !IsKind(err, ErrorKindConflict) {
+		t.Fatalf("AddConsumer(conflicting config) error = %v, want conflict kind", err)
+	}
+
+	sub, err := jsClient.PullSubscribe(jetStreamSubject, "worker-b", nats.Bind("ORDERS", "worker-b"))
 	if err != nil {
 		t.Fatalf("PullSubscribe() error = %v", err)
 	}
@@ -332,7 +379,29 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	if env.TraceID != "trace-js-1" {
 		t.Fatalf("JetStream TraceID = %q, want trace-js-1", env.TraceID)
 	}
-	if err := msg.Ack(); err != nil {
+	if err := msg.Nak(); err != nil {
+		t.Fatalf("Nak() error = %v", err)
+	}
+
+	redeliveredMsgs, err := sub.Fetch(1, nats.MaxWait(5*time.Second))
+	if err != nil {
+		t.Fatalf("Fetch(redelivery) error = %v", err)
+	}
+	if len(redeliveredMsgs) != 1 {
+		t.Fatalf("Fetch(redelivery) returned %d messages, want 1", len(redeliveredMsgs))
+	}
+	redelivered := redeliveredMsgs[0]
+	if !bytes.Equal(redelivered.Data, []byte("stored")) {
+		t.Fatalf("redelivered data = %q, want stored", redelivered.Data)
+	}
+	metadata, err := redelivered.Metadata()
+	if err != nil {
+		t.Fatalf("Metadata(redelivery) error = %v", err)
+	}
+	if metadata.NumDelivered < 2 {
+		t.Fatalf("redelivery count = %d, want at least 2", metadata.NumDelivered)
+	}
+	if err := redelivered.Ack(); err != nil {
 		t.Fatalf("Ack() error = %v", err)
 	}
 }

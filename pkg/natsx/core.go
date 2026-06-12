@@ -2,6 +2,7 @@ package natsx
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -43,6 +44,16 @@ func (c *Client) Request(ctx context.Context, env Envelope) (Envelope, error) {
 	}
 	msg, err := c.conn.RequestMsgWithContext(ctx, env.ToMsg())
 	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			wrapped := contextError(op, ctxErr)
+			recordErrorMetric(c.metrics, "request", wrapped)
+			return Envelope{}, wrapped
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			wrapped := contextError(op, err)
+			recordErrorMetric(c.metrics, "request", wrapped)
+			return Envelope{}, wrapped
+		}
 		wrapped := connectionError(op, err)
 		recordErrorMetric(c.metrics, "request", wrapped)
 		return Envelope{}, wrapped
