@@ -1,120 +1,154 @@
-# xlib-standard
+# natsx
 
-`xlib-standard` 是基础库标准与交付运行时仓库，承担五类职责：**Standard Source**、**Go Reference Template**、**Generator**、**Harness** 和 **Evidence Runtime**。它把基础库的公共 API、配置、错误、健康检查、metrics、测试、release Evidence、Goal Runtime 和下游生成规则放在同一套可验证工件中维护。
+`natsx` is the Go NATS integration module for ZoneCNH services. Its 1.0 contract is a small, explicit wrapper around [NATS](https://nats.io/) that standardizes Core NATS publish/subscribe, request/reply, JetStream persistence, subject naming, message envelopes, connection lifecycle, health, metrics, and credential redaction.
 
-旧名 `baselib-template` 和示例名 `foundationx` 只允许出现在迁移文档语境中；新的默认下游集成目标是 `kernel`，生成库包括 `configx`、`observex`、`testkitx`、`postgresx`、`redisx`、`kafkax`、`taosx`、`ossx` 和 `clickhousex`。
+This repository is being repaired from an old base-library template into the real NATS module. The public target package is `github.com/ZoneCNH/natsx/pkg/natsx`; legacy `pkg/templatex` code is not part of the natsx 1.0 API and must not be documented as the module identity.
 
-标准源仓库 URL 为 [`xlib-standard`](https://github.com/ZoneCNH/xlib-standard)。本仓库不再把标准源与模板实现拆成两个角色：标准文本、模板、generator、Harness gate 和 Evidence runtime 必须一起通过 release gate 验证。
 
-## 五类职责
+## Current truth (2026-06-12 repair)
 
-- **Standard Source**：维护基础库 P0 标准、仓库角色、分层、模块边界、DoD、安全、release 和 Evidence 协议。
-- **Go Reference Template**：提供可编译参考包 `pkg/templatex`、内部辅助、examples、contracts 和 testkit，用于证明标准可落地。
-- **Generator**：通过 [docs/generation.md](docs/generation.md) 与 `scripts/render_template.sh` 渲染具体基础库 module path、package name、README、docs 和 contracts。
-- **Harness**：通过 Makefile、scripts、CI 和 [.agent/harness.yaml](.agent/harness.yaml) 固化 required、extended、docs、boundary、integration、score 和 final gate。
-- **Evidence Runtime**：通过 [docs/standard/evidence-protocol.md](docs/standard/evidence-protocol.md)、[docs/release.md](docs/release.md)、[.agent](.agent/) 和 `release/manifest/latest.json` 记录可追溯完成状态。
+| Area | Current state | Release meaning |
+| --- | --- | --- |
+| Spec intent | `module/natsx/SPEC.md` and `goal.md` define the NATS 1.0 contract. | Source of target API and acceptance criteria. |
+| Implemented state | `pkg/natsx` now exposes a working repair baseline for config, lifecycle, Core NATS publish/subscribe/request/queue, JetStream admin/publish/pull, envelopes, subjects, health, errors, and metrics. Legacy `pkg/templatex` remains in this checkout. | Count only `pkg/natsx` executable evidence toward NATS 1.0; do not count `pkg/templatex`. |
+| Examples | Existing Go examples still exercise legacy template behavior; `examples/README.md` defines the replacement set. | Existing examples are compile smoke only until migrated to `pkg/natsx`. |
+| Traceability | Embedded NATS tests now cover the Core NATS and JetStream repair baseline; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while redelivery/DLQ, reconnect policy, examples, and benchmark evidence remain open. |
 
-## 非目标
+The inherited base-library release governance metadata remains on `v0.4.6` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
 
-- 不依赖 `x.go`，也不把 `x.go` 作为基础库构建前提。
-- 不包含 `x.go` 业务模型、业务 repository、业务消息 schema 或应用 wiring。
-- 不隐式读取生产密钥，不把 `/home/k8s/secrets/env/*` 的内容写入源码、README、测试日志、manifest 或 PR 描述。
-- 不创建隐藏全局客户端、不可关闭后台进程或真实基础设施 runtime。
-- 不把旧 `baselib-template` / `foundationx` 叙事继续作为主身份。
+## 1.0 scope
 
-## 标准结构
+`natsx` owns these stable responsibilities:
 
-- `pkg/templatex`：公共包 API 的可编译参考实现；渲染后会移动到 `pkg/<package-name>`。
-- `internal/`：脱敏、校验和运行时说明等内部辅助代码。
-- `testkit/`：可复用测试夹具和断言。
-- `examples/`：最小使用示例。
-- `contracts/`：JSON schema 和 metrics contract。
-- `docs/`：规格、设计、API、配置、测试、标准、迁移和发布文档。
-- `scripts/`：Harness gate 与 Evidence 脚本。
-- `.agent/`：Full Goal Runtime v3.1 工件、Evidence、评审、发布、回滚和复盘模板。
-- `release/manifest/`：release manifest 模板；`latest.json` 由 release gate 生成并作为 Evidence artifact 保存。
+- **Core NATS**: publish, subscribe, queue subscription, unsubscribe, drain, and request/reply with `context.Context` cancellation and explicit timeouts.
+- **JetStream**: stream and consumer admin, publish acknowledgements, durable consumption, ack/nack/term behavior, and redelivery handling.
+- **Envelope and headers**: bidirectional mapping between `NatsMessageEnvelope` fields and NATS headers for `traceId`, `messageId`, `schemaVersion`, subject, and custom headers.
+- **Subject builder**: canonical `domain.resource.action.v{version}` construction and parsing with validation.
+- **Configuration/options**: explicit servers, client name, auth/TLS, reconnect policy, request timeout, serializer, JetStream enablement, and safe defaults.
+- **Lifecycle**: connect, flush, drain, close, subscription cleanup, and idempotent shutdown.
+- **Health and observability**: readiness/liveness, connection state, operation counters/durations, consume/redelivery metrics, structured diagnostic fields, and sensitive-value redaction.
 
-## 文档入口
+## Public API baseline
 
-- [基础库标准索引](docs/standard/README.md)：P0 标准入口，覆盖仓库角色、分层、DoD、Harness、Evidence、release、安全和 generator 契约。
-- [基础库总标准](docs/standard/xlib-standard.md)：同步 [`xlib-standard`](https://github.com/ZoneCNH/xlib-standard) 的公共 API、配置、错误、健康检查、metrics、测试、安全和发布规则。
-- [仓库角色](docs/standard/repository-roles.md)：区分 `xlib-standard`、`kernel`、生成基础库和 `x.go`。
-- [模块边界](docs/standard/module-boundary.md)：定义标准、模板、generator、Harness、Evidence 与下游库边界。
-- [下游矩阵](docs/downstream-matrix.md)：列出 `kernel` 与所有目标库的 module path、package、layer、允许依赖和禁止依赖。
-- [下游同步策略](docs/downstream-sync-policy.md)：定义 `xlib-standard` 变更如何同步到 `kernel`、L1/L2 基础库，以及 `x.go` 的消费方边界。
-- [x.go 集成边界](docs/xgo-integration-boundary.md)：说明 `x.go` 只能作为调用方组合层，基础库不得反向依赖。
-- [迁移指南](docs/migration/baselib-template-to-xlib-standard.md)：记录旧名到新身份的迁移规则。
-- [Harness gate](docs/standard/harness-gates.md)：required、extended、generator、docs、score 和 final gate 命令。
-- [Evidence 协议](docs/standard/evidence-protocol.md)：`DONE with evidence:` 和 release manifest 要求。
-- [测试策略](docs/testing.md)：单元、示例 smoke、release quality 和 release manifest fixture 隔离要求。
-- [安全与密钥策略](docs/standard/security-and-secret-policy.md)：`govulncheck`、secret scan 和 Agent runtime 目录排除边界。
-- [供应链与 Evidence](docs/supply-chain.md)：workflow Action SHA pinning、固定 `govulncheck` 版本、release manifest 和 CI artifact 对齐。
-- [Release Scorecard](docs/scorecard.md)：`goalcli score --min 9.8` 的评分维度、阈值和语义边界。
-- [发布](docs/release.md)：`release-check`、manifest 字段和 Evidence 规则。
-- [独立审计 2026-06-02](docs/independent-audit-20260602.md)：独立审计发现、修复状态和剩余验证缺口。
-- [项目分析快照 2026-06-02](docs/project-analysis-20260602.md)：`v0.3.7` 发布/分析快照；当前治理主基线仍以 [目标文档](docs/goal/goal.md) v2.9.3 Complete 和 [.agent/traceability-matrix.md](.agent/traceability-matrix.md) 为准。
-- [结构性问题清单 2026-06-02](docs/structural-issues-20260602.md)：记录架构、治理和交付风险的结构化问题清单。
-- [.agent 真相状态文件](.agent/truth-state.yaml)：汇总当前治理、命令实现、release gate、Evidence 可用性和下游采纳状态口径。
+The stable 1.0 API is documented in `/home/ZoneCNH/module/natsx/goal.md` and `/home/ZoneCNH/module/natsx/SPEC.md`. The current repair baseline exposes these concrete contracts from `pkg/natsx`:
 
-## 命令
+```go
+type Handler func(context.Context, Envelope) (Envelope, error)
 
-本地运行完整 gate 前需要安装 `golangci-lint` 和 `govulncheck`；CI 会显式安装这两个工具。缺少任一工具时，`make lint` 或 `make security` 必须失败，不允许把必需 gate 记录为跳过。
+type Client struct {
+    // created by New(ctx, Config)
+}
 
-### 首次 clone 必跑
+func New(ctx context.Context, cfg Config) (*Client, error)
+func (c *Client) Publish(ctx context.Context, env Envelope) error
+func (c *Client) Request(ctx context.Context, env Envelope) (Envelope, error)
+func (c *Client) Subscribe(subject string, handler Handler) (*nats.Subscription, error)
+func (c *Client) QueueSubscribe(subject, queue string, handler Handler) (*nats.Subscription, error)
+func (c *Client) JetStream() (*JetStreamClient, error)
 
-新协作者 clone 仓库后必须立即执行：
-
-```bash
-make install-hooks   # 启用 .githooks 本地 P0 防线（RULE-WORKTREE-001 + RULE-SECRET-001）
-make doctor-hooks    # 验证 core.hooksPath=.githooks 已生效
-make sync-main       # 拉取并 fast-forward 本地 main（RULE-MAIN-SYNC-002）
+type JetStreamClient struct {
+    // wraps nats.JetStreamContext
+}
 ```
 
-`make install-hooks` 把 `git config core.hooksPath` 指向仓库内的 `.githooks/` 目录。**未启用 hooks 时，`pre-commit` 与 `pre-push` 不会被 Git 调用，本地 P0 防线（禁止在 main commit、secret 提前拦截）形同虚设。** 此外，`go run ./cmd/goalcli doctor` 会在 details 中报告当前 hooks 启用状态，配合 `make doctor-hooks` 形成自检闭环。`make ci` 链首位的 `doctor-hooks-local` 也会在本地环境强制 fail-fast（CI 环境通过 `$CI` / `$GITHUB_ACTIONS` 自动跳过）。
+Target 1.0 gaps still include higher-level consumer handles, explicit redelivery/DLQ policy helpers, reconnect/backoff evidence, migrated examples, and benchmark evidence.
 
-### 标准 gate
-
-```bash
-make ci
-make ci-extended
-GOWORK=off make dependency-check
-GOWORK=off make standard-impact-check
-GOWORK=off make docs-check
-XLIB_CONTEXT=release_verify GOWORK=off make release-check
-XLIB_CONTEXT=release_verify GOWORK=off make release-final-check
-XLIB_CONTEXT=release_verify GOWORK=off make release-preflight VERSION=v0.4.6
-make evidence
-```
-
-`release-check` 和 `release-check-extended` 已依赖 `dependency-check`、`standard-impact-check` 和 `docs-check`，用于在生成 Evidence 前确认依赖漂移自动化、标准影响报告、标准文档入口、下游同步策略、链接、模板占位符、当前命名、关键文本和 release manifest 协议没有漂移。`dependency-check` 读取 `renovate.json`、`.github/dependabot.yml` 和 `go.mod`；`standard-impact-check` 生成 `release/standard-impact/latest.md`，并把 `downstream_sync_required`、`downstream_release_decision`（只允许 `required` / `not_required`）和 `repository_rules_release_decision`（只允许 `audit_required` / `not_required`）结论交给 release manifest。`docs-check` 是结构性 gate，不替代人工语义审查。
-
-Release gate 还必须执行 `GOWORK=off go run ./cmd/goalcli score --min 9.8`。GitHub Actions workflow 引用的第三方 Action 必须固定为 40 位 commit SHA 并保留来源 tag 注释；CI、Release Check 和 Security workflow 安装 `govulncheck` 时使用固定基线 `golang.org/x/vuln/cmd/govulncheck@v1.3.0`，不得用 `@latest` 作为发布门禁配置。
-
-生成 `kernel` 示例：
+## Installation
 
 ```bash
-scripts/render_template.sh \
-  --module-name kernel \
-  --module-path github.com/ZoneCNH/kernel \
-  --package-name kernel \
-  --out ../kernel
+go get github.com/ZoneCNH/natsx
 ```
 
-发布式验证必须使用 `GOWORK=off`，避免父级或本地 `go.work` 改写 module 解析并掩盖模板独立性问题：
+The implementation depends on the official Go NATS client and must be testable with an embedded or locally launched `nats-server`; application tests must not require a shared external NATS service.
+
+## Minimal usage
+
+```go
+ctx := context.Background()
+client, err := natsx.New(ctx, natsx.Config{
+    Name:    "orders-api",
+    URL:     "nats://127.0.0.1:4222",
+    Timeout: time.Second,
+})
+if err != nil {
+    return err
+}
+defer client.Close(ctx)
+
+subject, err := natsx.Subject().Build("orders", "created", "publish", 1)
+if err != nil {
+    return err
+}
+
+err = client.Publish(ctx, natsx.Envelope{
+    Subject:       subject,
+    EventID:       "evt-123",
+    MessageID:     "msg-123",
+    SchemaVersion: "orders.created.v1",
+    TraceID:       "trace-abc",
+    Data:          []byte(`{"orderId":"o-1"}`),
+})
+return err
+```
+
+See [`examples/README.md`](examples/README.md) for the intended example set and current repair status.
+
+## Subject convention
+
+Subjects use the stable pattern:
+
+```text
+{domain}.{resource}.{action}.v{version}
+```
+
+Examples:
+
+- `orders.created.publish.v1`
+- `device.telemetry.ingest.v1`
+- `billing.invoice.request.v1`
+
+Do not place secrets, personal data, credentials, tokens, or unbounded cardinality identifiers in subject tokens.
+
+## Configuration keys
+
+The cross-module configuration namespace is stable:
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `foundationx.nats.enabled` | enables this module | `false` |
+| `foundationx.nats.servers` | NATS server URLs | required when enabled |
+| `foundationx.nats.client-name` | client identity | application name |
+| `foundationx.nats.request.timeout` | request/reply timeout | `1s` |
+| `foundationx.nats.reconnect.max-attempts` | reconnect attempts | `-1` continuous |
+| `foundationx.nats.jetstream.enabled` | enables JetStream APIs | `false` |
+| `foundationx.nats.serializer` | payload codec | `json` |
+
+Credentials, tokens, passwords, and connection URLs with embedded secrets must be redacted in errors, logs, health messages, and evidence artifacts.
+
+## Verification
+
+Required local checks for this repository:
 
 ```bash
-GOWORK=off make docs-check
-XLIB_CONTEXT=release_verify GOWORK=off make release-check
+GOWORK=off go test ./pkg/natsx -count=1
+GOWORK=off go test -race ./pkg/natsx -count=1
+GOWORK=off go test ./... -count=1
+git diff --check
 ```
 
-## Evidence
+Required module-evidence check from `/home/ZoneCNH` after updating `module/natsx` docs:
 
-完成需要 release manifest 和 CI Evidence。`release/manifest/latest.json` 是生成产物，不提交到源码历史；对应的 `release/manifest/latest.json.sha256` 也是生成产物，两者都必须保持在 `.gitignore` 中。manifest 会记录 module、commit、tree SHA、源码摘要、contract 指纹、`dependencies`、`tools`、生成时间、工作区状态、gate 结果、`standard_impact`、`downstream_sync_required`、`generator_evidence`、`score`、`workflow` 和这两个 Evidence artifact；其中 `standard_impact.downstream_release_decision` 只能使用 `required` 或 `not_required`，`standard_impact.repository_rules_release_decision` 只能使用 `audit_required` 或 `not_required`。`release-check` 会生成并校验 checksum，CI 会上传两者作为 artifact。`make release-evidence-check` 会验证 manifest 与当前仓库事实一致，`make release-final-check` 会额外要求工作区为 `clean`。Release manifest 测试必须在临时 fixture 仓库中构造所需 `.omc` state，不得依赖当前工作区的 Agent 运行态文件。最终完成声明必须包含 `DONE with evidence:`。
+```bash
+git diff --check -- module/natsx
+```
 
-Full Goal Runtime v3.1 位于 [.agent](.agent/)，其中 [goal-runtime](.agent/goal-runtime.md)、[object-model](.agent/object-model.md)、[state-machine](.agent/state-machine.md)、[traceability-matrix](.agent/traceability-matrix.md)、[harness](.agent/harness.yaml)、[evidence-protocol](.agent/evidence-protocol.md)、[release-template](.agent/release-template.md)、[retrospective-template](.agent/retrospective-template.md)、[risk-register](.agent/risk-register.md)、[decision-log](.agent/decision-log.md)、[rollback-protocol](.agent/rollback-protocol.md) 和 patch 文档用于把标准、执行、评审、发布和复盘连接到同一套 Evidence 协议。
+A 100/100 release also requires embedded NATS integration evidence for Core NATS and JetStream paths, plus synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status.
 
-## Smoke 覆盖
+## Current repair status
 
-`go test ./...` 必须覆盖公共包、`internal/`、`contracts/`、`testkit/` 和 `examples/`。当前示例 smoke 测试会验证 `examples/basic` 输出模块名、`examples/config` 输出脱敏值、`examples/health` 输出健康状态，防止文档示例和模板行为漂移。
-
-`scripts/run_fuzz_smoke.sh` 默认执行快速 fuzz smoke，`FUZZ_SMOKE_TIME` 未设置时每个 fuzz target 使用 `10s`。需要深度 fuzz 时显式设置更长时间，例如 `FUZZ_SMOKE_TIME=2m make fuzz-smoke`，并在最终 Evidence/DONE 说明中记录该时间配置。
+- Target branch: `natsx`.
+- Primary package target: `pkg/natsx`.
+- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue and JetStream stream admin, publish, pull, envelope metadata, and ack paths.
+- Known legacy residue: `pkg/templatex`, goal-runtime generator assets, and old examples remain until the implementation slice replaces them.
+- Remaining release gaps: migrated examples, explicit redelivery/DLQ policy evidence, reconnect/backoff evidence, benchmark/SLO evidence, and full consumer lifecycle API polish.
+- `/home/natsx/docs/l2/` is intentionally excluded from this repair unless the leader explicitly expands scope.

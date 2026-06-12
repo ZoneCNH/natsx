@@ -3,26 +3,25 @@ package main
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/ZoneCNH/natsx/examples/internal/embeddednats"
 	"github.com/ZoneCNH/natsx/pkg/natsx"
 )
 
-func TestRunPublishesAndReceivesEnvelope(t *testing.T) {
+func TestRunPublishesAndAcksJetStreamMessage(t *testing.T) {
 	var stdout bytes.Buffer
 
 	err := run(&stdout, natsx.Config{
-		Name:         "natsx-basic-example-test",
-		URL:          embeddednats.Run(t, false),
-		DrainTimeout: 2 * time.Second,
+		Name:            "natsx-jetstream-example-test",
+		URL:             embeddednats.Run(t, true),
+		EnableJetStream: true,
 	})
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 
-	if stdout.String() != "orders.created.publish.v1\n" {
-		t.Fatalf("stdout = %q, want subject", stdout.String())
+	if stdout.String() != "EXAMPLE_EVENTS\n" {
+		t.Fatalf("stdout = %q, want stream name", stdout.String())
 	}
 }
 
@@ -34,7 +33,7 @@ func TestConfigFromEnvRequiresURL(t *testing.T) {
 	}
 }
 
-func TestConfigFromEnvUsesNATSURL(t *testing.T) {
+func TestConfigFromEnvEnablesJetStream(t *testing.T) {
 	const url = "nats://127.0.0.1:4222"
 	t.Setenv("NATS_URL", url)
 
@@ -45,7 +44,7 @@ func TestConfigFromEnvUsesNATSURL(t *testing.T) {
 	if cfg.URL != url {
 		t.Fatalf("URL = %q, want %q", cfg.URL, url)
 	}
-	if cfg.Name == "" {
-		t.Fatal("Name is empty")
+	if !cfg.EnableJetStream {
+		t.Fatal("EnableJetStream = false, want true")
 	}
 }
