@@ -3,6 +3,8 @@ package natsx
 import (
 	"bytes"
 	"context"
+	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -12,10 +14,15 @@ import (
 
 func runEmbeddedNATSServer(t testing.TB, jetStream bool) *natsserver.Server {
 	t.Helper()
+	return runEmbeddedNATSServerOnPort(t, jetStream, -1)
+}
+
+func runEmbeddedNATSServerOnPort(t testing.TB, jetStream bool, port int) *natsserver.Server {
+	t.Helper()
 
 	opts := &natsserver.Options{
 		Host:      "127.0.0.1",
-		Port:      -1,
+		Port:      port,
 		NoLog:     true,
 		NoSigs:    true,
 		JetStream: jetStream,
@@ -329,6 +336,50 @@ func TestEmbeddedNATSCoreTimeoutUnsubscribeDrainAndHealth(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 
+	drainSubject := mustSubject(t, "orders", "drain", "publish", 1)
+	drained := make(chan Envelope, 2)
+	drainSub, err := client.Subscribe(drainSubject, func(_ context.Context, env Envelope) (Envelope, error) {
+		drained <- env
+		return Envelope{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Subscribe(drain) error = %v", err)
+	}
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() before drain error = %v", err)
+	}
+	drainPublishCtx, drainPublishCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := client.Publish(drainPublishCtx, Envelope{Subject: drainSubject, Data: []byte("before-drain")}); err != nil {
+		drainPublishCancel()
+		t.Fatalf("Publish(before drain) error = %v", err)
+	}
+	drainPublishCancel()
+	select {
+	case env := <-drained:
+		if !bytes.Equal(env.Data, []byte("before-drain")) {
+			t.Fatalf("drain pre-message data = %q, want before-drain", env.Data)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for message before drain")
+	}
+	if err := drainSub.Drain(); err != nil {
+		t.Fatalf("Subscription.Drain() error = %v", err)
+	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		return !drainSub.IsValid()
+	}, "Subscription.Drain() left subscription valid")
+	afterDrainCtx, afterDrainCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if err := client.Publish(afterDrainCtx, Envelope{Subject: drainSubject, Data: []byte("after-drain")}); err != nil {
+		afterDrainCancel()
+		t.Fatalf("Publish(after drain) error = %v", err)
+	}
+	afterDrainCancel()
+	select {
+	case env := <-drained:
+		t.Fatalf("received message after subscription drain: %+v", env)
+	case <-time.After(200 * time.Millisecond):
+	}
+
 	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer closeCancel()
 	closeClient, err := New(closeCtx, Config{
@@ -352,6 +403,60 @@ func TestEmbeddedNATSCoreTimeoutUnsubscribeDrainAndHealth(t *testing.T) {
 	if closedHealth.Status != HealthUnhealthy {
 		t.Fatalf("HealthCheck(closed) status = %q, want unhealthy", closedHealth.Status)
 	}
+}
+
+func TestEmbeddedNATSReconnectBackoffAndDegradedHealth(t *testing.T) {
+	srv := runEmbeddedNATSServer(t, false)
+	tcpAddr, ok := srv.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("embedded server addr = %T, want *net.TCPAddr", srv.Addr())
+	}
+
+	metrics := &recordingMetrics{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := New(ctx, Config{
+		Name:          "natsx-reconnect-test",
+		URL:           srv.ClientURL(),
+		Timeout:       time.Second,
+		DrainTimeout:  time.Second,
+		MaxReconnects: 100,
+		ReconnectWait: 20 * time.Millisecond,
+	}, WithMetrics(metrics))
+	if err != nil {
+		t.Fatalf("New(reconnect client) error = %v", err)
+	}
+	defer func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer closeCancel()
+		if err := client.Close(closeCtx); err != nil {
+			t.Fatalf("Close(reconnect client) error = %v", err)
+		}
+	}()
+
+	srv.Shutdown()
+	srv.WaitForShutdown()
+	waitForCondition(t, 3*time.Second, func() bool {
+		return !client.Conn().IsConnected() && !client.Conn().IsClosed()
+	}, "client did not enter reconnecting state after server shutdown")
+
+	degraded := client.HealthCheck(context.Background())
+	if degraded.Status != HealthDegraded {
+		t.Fatalf("HealthCheck(reconnecting) status = %q, want degraded: %s", degraded.Status, degraded.Message)
+	}
+
+	restarted := runEmbeddedNATSServerOnPort(t, false, tcpAddr.Port)
+	waitForCondition(t, 5*time.Second, func() bool {
+		return restarted.ReadyForConnections(10*time.Millisecond) && client.Conn().IsConnected()
+	}, "client did not reconnect to restarted server")
+
+	healthy := client.HealthCheck(context.Background())
+	if healthy.Status != HealthHealthy {
+		t.Fatalf("HealthCheck(reconnected) status = %q, want healthy: %s", healthy.Status, healthy.Message)
+	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		return metrics.counterWithLabel(MetricConnectionReconnectsTotal, "name", "natsx-reconnect-test") > 0
+	}, "reconnect metric %s was not recorded", MetricConnectionReconnectsTotal)
 }
 
 func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
@@ -521,5 +626,89 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	}
 	if err := redelivered.Ack(); err != nil {
 		t.Fatalf("Ack() error = %v", err)
+	}
+}
+
+func TestEmbeddedNATSJetStreamMaxDeliverAdvisory(t *testing.T) {
+	srv := runEmbeddedNATSServer(t, true)
+	client := newEmbeddedClient(t, srv, true)
+
+	jsClient, err := client.JetStreamClient()
+	if err != nil {
+		t.Fatalf("JetStreamClient() error = %v", err)
+	}
+
+	advisorySub, err := client.Conn().SubscribeSync("$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.DLQ.dlq-worker")
+	if err != nil {
+		t.Fatalf("Subscribe(max deliveries advisory) error = %v", err)
+	}
+	defer advisorySub.Unsubscribe()
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() after advisory subscribe error = %v", err)
+	}
+
+	subject := mustSubject(t, "orders", "deadletter", "publish", 1)
+	if _, err := jsClient.AddStream(&StreamConfig{
+		Name:     "DLQ",
+		Subjects: []string{subject},
+	}); err != nil {
+		t.Fatalf("AddStream(DLQ) error = %v", err)
+	}
+	if _, err := jsClient.AddConsumer("DLQ", &ConsumerConfig{
+		Durable:       "dlq-worker",
+		AckPolicy:     nats.AckExplicitPolicy,
+		AckWait:       50 * time.Millisecond,
+		MaxDeliver:    2,
+		FilterSubject: subject,
+	}); err != nil {
+		t.Fatalf("AddConsumer(DLQ) error = %v", err)
+	}
+
+	sub, err := jsClient.PullSubscribe(subject, "dlq-worker", nats.Bind("DLQ", "dlq-worker"))
+	if err != nil {
+		t.Fatalf("PullSubscribe(DLQ) error = %v", err)
+	}
+	defer sub.Unsubscribe()
+	if _, err := jsClient.Publish(Envelope{Subject: subject, EventID: "event-dlq-1", Data: []byte("poison")}); err != nil {
+		t.Fatalf("JetStream Publish(DLQ) error = %v", err)
+	}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		msgs, err := sub.Fetch(1, nats.MaxWait(3*time.Second))
+		if err != nil {
+			t.Fatalf("Fetch(DLQ attempt %d) error = %v", attempt, err)
+		}
+		if len(msgs) != 1 {
+			t.Fatalf("Fetch(DLQ attempt %d) returned %d messages, want 1", attempt, len(msgs))
+		}
+		metadata, err := msgs[0].Metadata()
+		if err != nil {
+			t.Fatalf("Metadata(DLQ attempt %d) error = %v", attempt, err)
+		}
+		if metadata.NumDelivered < uint64(attempt) {
+			t.Fatalf("delivery attempt = %d, want at least %d", metadata.NumDelivered, attempt)
+		}
+		if attempt < 2 {
+			if err := msgs[0].Nak(); err != nil {
+				t.Fatalf("Nak(DLQ attempt %d) error = %v", attempt, err)
+			}
+		}
+	}
+
+	time.Sleep(150 * time.Millisecond)
+	msgs, err := sub.Fetch(1, nats.MaxWait(500*time.Millisecond))
+	if err == nil {
+		t.Fatalf("Fetch(DLQ after MaxDeliver) returned %d messages, want timeout", len(msgs))
+	}
+	if !errors.Is(err, nats.ErrTimeout) {
+		t.Fatalf("Fetch(DLQ after MaxDeliver) error = %v, want %v", err, nats.ErrTimeout)
+	}
+
+	advisory, err := advisorySub.NextMsg(3 * time.Second)
+	if err != nil {
+		t.Fatalf("NextMsg(max deliveries advisory) error = %v", err)
+	}
+	if advisory.Subject == "" || len(advisory.Data) == 0 {
+		t.Fatalf("empty max-deliveries advisory: subject=%q data=%q", advisory.Subject, advisory.Data)
 	}
 }

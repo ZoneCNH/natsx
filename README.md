@@ -11,8 +11,8 @@ This repository is being repaired from an old base-library template into the rea
 | --- | --- | --- |
 | Spec intent | `module/natsx/SPEC.md` and `goal.md` define the NATS 1.0 contract. | Source of target API and acceptance criteria. |
 | Implemented state | `pkg/natsx` now exposes a working repair baseline for config, lifecycle, Core NATS publish/subscribe/request/queue, JetStream admin/publish/pull, envelopes, subjects, health, errors, and metrics. Legacy `pkg/templatex` remains in this checkout. | Count only `pkg/natsx` executable evidence toward NATS 1.0; do not count `pkg/templatex`. |
-| Examples | Existing Go examples still exercise legacy template behavior; `examples/README.md` defines the replacement set. | Existing examples are compile smoke only until migrated to `pkg/natsx`. |
-| Traceability | Embedded NATS tests now cover the Core NATS and JetStream repair baseline; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while redelivery/DLQ, reconnect policy, examples, and benchmark evidence remain open. |
+| Examples | Go examples now import `pkg/natsx` and run embedded broker or sanitization smoke coverage. | Example smoke supports the repair baseline but is not release approval by itself. |
+| Traceability | Embedded NATS tests now cover Core NATS, JetStream, reconnect/degraded health, max-deliveries advisory behavior, examples, and benchmarks; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while formal gates, live TLS/auth breadth, production SLO thresholds, and API polish remain open. |
 
 The inherited base-library release governance metadata remains on `v0.4.6` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
 
@@ -51,7 +51,7 @@ type JetStreamClient struct {
 }
 ```
 
-Target 1.0 gaps still include higher-level consumer handles, explicit redelivery/DLQ policy helpers, reconnect/backoff evidence, migrated examples, and benchmark evidence.
+Target 1.0 gaps still include higher-level consumer handles, broader configuration alias compatibility, live TLS/auth integration evidence, production SLO thresholds, and formal release gates.
 
 ## Installation
 
@@ -132,6 +132,8 @@ Required local checks for this repository:
 ```bash
 GOWORK=off go test ./pkg/natsx -count=1
 GOWORK=off go test -race ./pkg/natsx -count=1
+GOWORK=off go test ./pkg/natsx -bench 'BenchmarkEmbeddedNATS(Publish|Request|JetStreamPublish)$' -run '^$' -count=1 -benchtime=100x
+GOWORK=off go test ./examples/... -count=1
 GOWORK=off go test ./... -count=1
 git diff --check
 ```
@@ -142,13 +144,13 @@ Required module-evidence check from `/home/ZoneCNH` after updating `module/natsx
 git diff --check -- module/natsx
 ```
 
-A 100/100 release also requires embedded NATS integration evidence for Core NATS and JetStream paths, plus synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status.
+A 100/100 release requires synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status plus formal arbiter, live TLS/auth/config breadth, and production SLO evidence.
 
 ## Current repair status
 
 - Target branch: `natsx`.
 - Primary package target: `pkg/natsx`.
-- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue and JetStream stream admin, publish, pull, envelope metadata, and ack paths.
-- Known legacy residue: `pkg/templatex`, goal-runtime generator assets, and old examples remain until the implementation slice replaces them.
-- Remaining release gaps: migrated examples, explicit redelivery/DLQ policy evidence, reconnect/backoff evidence, benchmark/SLO evidence, and full consumer lifecycle API polish.
+- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue/unsubscribe/drain/health, reconnect/degraded health, JetStream stream/consumer admin, publish, pull, envelope metadata, ack/nack/redelivery, max-deliveries advisory behavior, examples, and publish/request/JetStream publish benchmarks.
+- Known legacy residue: `pkg/templatex` and goal-runtime generator assets remain outside the natsx 1.0 API.
+- Remaining release gaps: formal four-source arbiter, live TLS/auth/config alias breadth, production SLO thresholds, and higher-level consumer lifecycle/API/observability polish.
 - `/home/natsx/docs/l2/` is intentionally excluded from this repair unless the leader explicitly expands scope.
