@@ -1,29 +1,25 @@
-# 可观测性模板
+# natsx Observability
 
-## 占位符
+## Metrics
 
-- `{{MODULE_NAME}}`
-- `{{PACKAGE_NAME}}`
+`pkg/natsx` records the metrics defined in `contracts/metrics.md`. The canonical metric namespace is `foundationx_nats_`:
 
-## 指标
+- `foundationx_nats_client_created_total`
+- `foundationx_nats_client_closed_total`
+- `foundationx_nats_client_errors_total`
+- `foundationx_nats_client_health_status`
+- `foundationx_nats_client_health_latency_ms`
+- `foundationx_nats_core_messages_total`
+- `foundationx_nats_core_request_duration_seconds`
+- `foundationx_nats_jetstream_messages_total`
+- `foundationx_nats_connection_reconnects_total`
+- `foundationx_nats_connection_disconnects_total`
 
-使用 `contracts/metrics.md` 中的 metrics contract。模板内置的最小指标包括：
+Lifecycle metrics are emitted by `New`, `Close`, connection callbacks, and `HealthCheck`. Core NATS and JetStream metrics are emitted by the corresponding publish/request/subscribe/admin paths. Metric labels must stay bounded and must not include payloads, credentials, tokens, connection strings with embedded secrets, or arbitrary headers.
 
-- `client_created_total`
-- `client_closed_total`
-- `client_errors_total`
-- `client_health_status`
-- `client_health_latency_ms`
-- `client_requests_total`
-- `client_request_duration_seconds`
-- `client_retries_total`
-- `client_inflight`
+## Health checks
 
-生命周期指标由 `New`、`Close` 和 `HealthCheck` 直接记录；请求、耗时、重试和 inflight 指标作为生成具体库后的扩展 contract。
-
-## 健康检查
-
-持有资源的客户端必须暴露 `HealthCheck(context.Context)`。返回值必须使用 `contracts/health.schema.json` 中的字段名：
+Clients expose `HealthCheck(context.Context)`. Returned fields are:
 
 - `name`
 - `status`
@@ -32,10 +28,8 @@
 - `latency_ms`
 - `metadata`
 
-`status` 只能是 `healthy`、`degraded` 或 `unhealthy`。未初始化、已关闭、`nil` context、canceled context 都必须返回 `unhealthy`。已初始化且未关闭的 client 如果本次检查的 context deadline 预算短于 `Config.Timeout`，必须返回 `degraded`，并继续记录 `client_health_status` 和 `client_health_latency_ms`，其中 `status` label 为 `degraded`。
+`status` is one of `healthy`, `degraded`, or `unhealthy`. Nil context, canceled context, uninitialized clients, and closed clients return `unhealthy`. A connected client with an insufficient health-check deadline returns `degraded`. Health checks record `foundationx_nats_client_health_status` and `foundationx_nats_client_health_latency_ms` with bounded labels.
 
-## 日志
+## Logs and evidence
 
-只能记录脱敏配置。不得记录原始凭据或生产连接材料。
-
-本模板不得依赖 `x.go`。
+Errors, logs, health messages, docs evidence, and test output must not print raw credentials or production connection material. Use redacted placeholders such as `<redacted>` for URLs, tokens, passwords, nkey seeds, usernames, and credentials paths when those values come from secret stores or live dev configuration.

@@ -21,7 +21,7 @@ func TestRunPrintsSanitizedConfig(t *testing.T) {
 	}
 	for _, redacted := range []string{
 		"credential=***",
-		"password_secret=***",
+		"password_redacted=***",
 		"nkey=***",
 		"creds=***",
 	} {

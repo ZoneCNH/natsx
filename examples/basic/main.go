@@ -60,7 +60,7 @@ func run(stdout io.Writer, cfg natsx.Config) error {
 	if err != nil {
 		return fmt.Errorf("subscribe: %w", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		return fmt.Errorf("flush subscription: %w", err)
 	}

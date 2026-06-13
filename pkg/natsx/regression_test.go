@@ -2,11 +2,13 @@ package natsx
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
 func TestNewRejectsNilContextAndRecordsMetric(t *testing.T) {
 	metrics := &recordingMetrics{}
+	//nolint:staticcheck // verifies nil context validation.
 	client, err := New(nil, Config{}, WithMetrics(metrics))
 	if client != nil {
 		t.Fatalf("New(nil) client = %v, want nil", client)
@@ -66,6 +68,7 @@ func TestCoreOperationsRejectInvalidPreconditions(t *testing.T) {
 	}
 
 	client = &Client{metrics: NoopMetrics{}}
+	//nolint:staticcheck // verifies nil context validation.
 	if err := client.Publish(nil, NewEnvelope("subject", nil)); !IsKind(err, ErrorKindValidation) {
 		t.Fatalf("Publish(nil ctx) error = %v, want validation", err)
 	}
@@ -103,6 +106,7 @@ func TestJetStreamGuards(t *testing.T) {
 
 func TestHealthCheckNilAndCanceledContext(t *testing.T) {
 	client := &Client{cfg: Config{Name: "svc"}.withDefaults(), metrics: NoopMetrics{}}
+	//nolint:staticcheck // verifies nil context validation.
 	if status := client.HealthCheck(nil); status.Status != HealthUnhealthy || status.Message == "" {
 		t.Fatalf("HealthCheck(nil ctx) = %+v, want unhealthy with message", status)
 	}
@@ -118,4 +122,24 @@ func TestNoopMetricsMethodsAreSafe(t *testing.T) {
 	metrics.IncCounter("counter", map[string]string{"k": "v"})
 	metrics.ObserveHistogram("hist", 1, nil)
 	metrics.SetGauge("gauge", 1, nil)
+}
+
+func TestMetricNamesUseFoundationNATSPrefix(t *testing.T) {
+	metrics := []string{
+		MetricClientCreatedTotal,
+		MetricClientClosedTotal,
+		MetricClientErrorsTotal,
+		MetricClientHealthStatus,
+		MetricClientHealthLatencyMS,
+		MetricCoreMessagesTotal,
+		MetricCoreRequestDurationSeconds,
+		MetricJetStreamMessagesTotal,
+		MetricConnectionReconnectsTotal,
+		MetricConnectionDisconnectsTotal,
+	}
+	for _, metric := range metrics {
+		if !strings.HasPrefix(metric, "foundationx_nats_") {
+			t.Fatalf("metric %q does not use foundationx_nats_ prefix", metric)
+		}
+	}
 }

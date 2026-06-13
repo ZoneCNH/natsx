@@ -77,7 +77,7 @@ func run(stdout io.Writer, cfg natsx.Config) error {
 	if err != nil {
 		return fmt.Errorf("pull subscribe: %w", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 
 	msgs, err := sub.Fetch(1, nats.MaxWait(2*time.Second))
 	if err != nil {
