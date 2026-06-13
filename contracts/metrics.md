@@ -16,3 +16,19 @@ All NATS module metrics use the canonical `foundationx_nats_` prefix. Legacy `na
 | `foundationx_nats_jetstream_messages_total` | counter | `operation`, `status` | JetStream publish, pull, ack/nack, and stream/consumer operation outcomes. |
 | `foundationx_nats_connection_reconnects_total` | counter | `name` | NATS reconnect notifications observed by the client. |
 | `foundationx_nats_connection_disconnects_total` | counter | `name` | NATS disconnect notifications observed by the client. |
+
+## Templatex compatibility metrics
+
+The repository still carries `pkg/templatex` compatibility contracts used by inherited contract tests. These names are outside the `pkg/natsx` 1.0 metrics namespace, but remain documented until the templatex compatibility surface is retired.
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `client_created_total` | counter | `name` | Templatex clients created. |
+| `client_closed_total` | counter | `name` | Templatex clients closed. |
+| `client_errors_total` | counter | `op`, `kind` | Templatex lifecycle and operation errors. |
+| `client_health_status` | gauge | `name`, `status` | Templatex health status gauge. |
+| `client_health_latency_ms` | histogram | `name`, `status` | Templatex health latency in milliseconds. |
+| `client_requests_total` | counter | `operation`, `status` | Templatex request outcomes. |
+| `client_request_duration_seconds` | histogram | `operation`, `status` | Templatex request latency in seconds. |
+| `client_retries_total` | counter | `operation` | Templatex retry attempts. |
+| `client_inflight` | gauge | `operation` | Templatex in-flight operations. |
