@@ -151,6 +151,10 @@ Parse and validation errors name the invalid key or invalid URL kind but do not 
 Required local checks for this repository:
 
 ```bash
+GOWORK=off make docs-check
+GOWORK=off make dependency-check
+GOWORK=off make standard-impact-check
+GOWORK=off make release-check
 GOWORK=off go test ./pkg/natsx -count=1
 GOWORK=off go test -race ./pkg/natsx -count=1
 GOWORK=off go test ./pkg/natsx -bench 'BenchmarkEmbeddedNATS(Publish|Request|JetStreamPublish)$' -run '^$' -count=1 -benchtime=100x
@@ -166,7 +170,18 @@ Required module-evidence check from `/home/ZoneCNH` after updating `module/natsx
 git diff --check -- module/natsx
 ```
 
+Release governance references:
+
+- Standard contract: `https://github.com/ZoneCNH/xlib-standard`.
+- Downstream synchronization policy: `docs/downstream-sync-policy.md`; L1 consumers such as `kernel` are tracked through `downstream_sync_required`.
+- Release evidence artifacts: `release/manifest/latest.json`, `release/manifest/latest.json.sha256`, and `release/standard-impact/latest.md`.
+- Dependency automation inputs: `renovate.json` and `.github/dependabot.yml`.
+- Fuzz smoke duration knob: `FUZZ_SMOKE_TIME`.
+- Standard-impact decisions: `downstream_release_decision`（只允许 `required` / `not_required`） and `repository_rules_release_decision`（只允许 `audit_required` / `not_required`）.
+
 A 100/100 release requires synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status plus formal arbiter, production TLS breadth, and production SLO evidence.
+
+Completion reports must include `DONE with evidence:` followed by the concrete validation and merge evidence.
 
 ## Current repair status
 
