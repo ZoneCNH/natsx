@@ -31,8 +31,11 @@ func (c *Client) HealthCheck(ctx context.Context) HealthStatus {
 	finish := func() HealthStatus {
 		status.LatencyMs = time.Since(start).Milliseconds()
 		if c != nil && c.metrics != nil {
-			c.metrics.SetGauge(MetricClientHealthStatus, healthGaugeValue(status.Status), map[string]string{"name": status.Name, "status": string(status.Status)})
-			c.metrics.ObserveHistogram(MetricClientHealthLatencyMS, float64(status.LatencyMs), map[string]string{"name": status.Name, "status": string(status.Status)})
+			labels := map[string]string{"name": status.Name, "status": string(status.Status)}
+			value := healthGaugeValue(status.Status)
+			c.metrics.SetGauge(MetricClientHealthStatus, value, labels)
+			c.metrics.SetGauge(MetricConnectionState, value, labels)
+			c.metrics.ObserveHistogram(MetricClientHealthLatencyMS, float64(status.LatencyMs), labels)
 		}
 		return status
 	}

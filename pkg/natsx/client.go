@@ -11,6 +11,7 @@ import (
 type Client struct {
 	cfg     Config
 	metrics Metrics
+	logger  Logger
 	conn    *nats.Conn
 	js      nats.JetStreamContext
 }
@@ -37,10 +38,12 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	nopts := []nats.Option{nats.Name(cfg.Name), nats.Timeout(cfg.Timeout), nats.MaxReconnects(cfg.MaxReconnects), nats.ReconnectWait(cfg.ReconnectWait), nats.DrainTimeout(cfg.DrainTimeout), nats.DisconnectErrHandler(func(_ *nats.Conn, _ error) {
+	nopts := []nats.Option{nats.Name(cfg.Name), nats.Timeout(cfg.Timeout), nats.MaxReconnects(cfg.MaxReconnects), nats.ReconnectWait(cfg.ReconnectWait), nats.DrainTimeout(cfg.DrainTimeout), nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 		options.metrics.IncCounter(MetricConnectionDisconnectsTotal, map[string]string{"name": cfg.Name})
+		logConnectionEvent(context.Background(), options.logger, LogClientDisconnected, "disconnect", cfg.Name, err)
 	}), nats.ReconnectHandler(func(_ *nats.Conn) {
 		options.metrics.IncCounter(MetricConnectionReconnectsTotal, map[string]string{"name": cfg.Name})
+		logConnectionEvent(context.Background(), options.logger, LogClientReconnected, "reconnect", cfg.Name, nil)
 	})}
 	if cfg.Token != "" {
 		nopts = append(nopts, nats.Token(cfg.Token))
@@ -66,9 +69,10 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Client, error) {
 	if err != nil {
 		wrapped := connectionError(op, err)
 		recordErrorMetric(options.metrics, "new", wrapped)
+		logConnectionEvent(ctx, options.logger, LogClientConnected, "connect", cfg.Name, wrapped)
 		return nil, wrapped
 	}
-	client := &Client{cfg: cfg, metrics: options.metrics, conn: conn}
+	client := &Client{cfg: cfg, metrics: options.metrics, logger: options.logger, conn: conn}
 	if cfg.EnableJetStream {
 		js, err := conn.JetStream()
 		if err != nil {
@@ -80,6 +84,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Client, error) {
 		client.js = js
 	}
 	options.metrics.IncCounter(MetricClientCreatedTotal, map[string]string{"name": cfg.Name})
+	client.logNATSEvent(ctx, LogEvent{Name: LogClientConnected, Operation: "connect", Status: "ok"})
 	return client, nil
 }
 
@@ -92,7 +97,7 @@ func Wrap(conn *nats.Conn, opts ...Option) (*Client, error) {
 		opt(&options)
 	}
 	js, _ := conn.JetStream()
-	return &Client{cfg: Config{Name: "natsx"}.withDefaults(), metrics: options.metrics, conn: conn, js: js}, nil
+	return &Client{cfg: Config{Name: "natsx"}.withDefaults(), metrics: options.metrics, logger: options.logger, conn: conn, js: js}, nil
 }
 
 func (c *Client) Conn() *nats.Conn {
@@ -138,6 +143,7 @@ func (c *Client) Close(ctx context.Context) error {
 		}
 		wrapped := connectionError(op, err)
 		recordErrorMetric(c.metrics, "close", wrapped)
+		c.logNATSEvent(ctx, LogEvent{Name: LogClientDisconnected, Operation: "close", Status: "error", ErrorKind: errorKind(wrapped)})
 		return wrapped
 	}
 
@@ -151,6 +157,7 @@ func (c *Client) Close(ctx context.Context) error {
 	for {
 		if c.conn.IsClosed() {
 			c.metrics.IncCounter(MetricClientClosedTotal, map[string]string{"name": c.cfg.Name})
+			c.logNATSEvent(ctx, LogEvent{Name: LogClientDisconnected, Operation: "close", Status: "ok"})
 			return nil
 		}
 		select {
@@ -158,11 +165,13 @@ func (c *Client) Close(ctx context.Context) error {
 			c.conn.Close()
 			err := contextError(op, ctx.Err())
 			recordErrorMetric(c.metrics, "close", err)
+			c.logNATSEvent(ctx, LogEvent{Name: LogClientDisconnected, Operation: "close", Status: "error", ErrorKind: errorKind(err)})
 			return err
 		case <-timer.C:
 			c.conn.Close()
 			err := WrapError(ErrorKindTimeout, op, "drain timeout exceeded", true, nil)
 			recordErrorMetric(c.metrics, "close", err)
+			c.logNATSEvent(ctx, LogEvent{Name: LogClientDisconnected, Operation: "close", Status: "error", ErrorKind: errorKind(err)})
 			return err
 		case <-ticker.C:
 		}

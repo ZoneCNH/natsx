@@ -1,16 +1,27 @@
 package natsx
 
 const (
-	MetricClientCreatedTotal         = "natsx_client_created_total"
-	MetricClientClosedTotal          = "natsx_client_closed_total"
-	MetricClientErrorsTotal          = "natsx_client_errors_total"
-	MetricClientHealthStatus         = "natsx_client_health_status"
-	MetricClientHealthLatencyMS      = "natsx_client_health_latency_ms"
-	MetricCoreMessagesTotal          = "natsx_core_messages_total"
-	MetricCoreRequestDurationSeconds = "natsx_core_request_duration_seconds"
-	MetricJetStreamMessagesTotal     = "natsx_jetstream_messages_total"
-	MetricConnectionReconnectsTotal  = "natsx_connection_reconnects_total"
-	MetricConnectionDisconnectsTotal = "natsx_connection_disconnects_total"
+	MetricPublishTotal               = "foundationx_nats_publish_total"
+	MetricPublishDurationMS          = "foundationx_nats_publish_duration_ms"
+	MetricRequestTotal               = "foundationx_nats_request_total"
+	MetricRequestDurationMS          = "foundationx_nats_request_duration_ms"
+	MetricConsumeTotal               = "foundationx_nats_consume_total"
+	MetricConsumeDurationMS          = "foundationx_nats_consume_duration_ms"
+	MetricRedeliveryTotal            = "foundationx_nats_redelivery_total"
+	MetricConnectionState            = "foundationx_nats_connection_state"
+	MetricCoreMessagesTotal          = "foundationx_nats_messages_total"
+	MetricJetStreamMessagesTotal     = "foundationx_nats_jetstream_messages_total"
+	MetricClientCreatedTotal         = "foundationx_nats_client_created_total"
+	MetricClientClosedTotal          = "foundationx_nats_client_closed_total"
+	MetricClientErrorsTotal          = "foundationx_nats_client_errors_total"
+	MetricClientHealthStatus         = "foundationx_nats_client_health_status"
+	MetricClientHealthLatencyMS      = "foundationx_nats_client_health_latency_ms"
+	MetricConnectionReconnectsTotal  = "foundationx_nats_connection_reconnects_total"
+	MetricConnectionDisconnectsTotal = "foundationx_nats_connection_disconnects_total"
+
+	// Deprecated aliases kept for downstream source compatibility.
+	MetricCoreRequestDurationSeconds = MetricRequestDurationMS
+	MetricCoreHandlerDurationSeconds = MetricConsumeDurationMS
 )
 
 type Metrics interface {
