@@ -5,14 +5,14 @@
 This repository is being repaired from an old base-library template into the real NATS module. The public target package is `github.com/ZoneCNH/natsx/pkg/natsx`; legacy `pkg/templatex` code is not part of the natsx 1.0 API and must not be documented as the module identity.
 
 
-## Current truth (2026-06-12 repair)
+## Current truth (2026-06-13 repair)
 
 | Area | Current state | Release meaning |
 | --- | --- | --- |
 | Spec intent | `module/natsx/SPEC.md` and `goal.md` define the NATS 1.0 contract. | Source of target API and acceptance criteria. |
-| Implemented state | `pkg/natsx` now exposes a working repair baseline for config, lifecycle, Core NATS publish/subscribe/request/queue, JetStream admin/publish/pull, envelopes, subjects, health, errors, and metrics. Legacy `pkg/templatex` remains in this checkout. | Count only `pkg/natsx` executable evidence toward NATS 1.0; do not count `pkg/templatex`. |
+| Implemented state | `pkg/natsx` now exposes a working repair baseline for config, env loading, lifecycle, Core NATS publish/subscribe/request/queue, JetStream admin/publish/pull, envelopes, subjects, health, errors, and metrics. Legacy `pkg/templatex` remains in this checkout. | Count only `pkg/natsx` executable evidence toward NATS 1.0; do not count `pkg/templatex`. |
 | Examples | Go examples now import `pkg/natsx` and run embedded broker or sanitization smoke coverage. | Example smoke supports the repair baseline but is not release approval by itself. |
-| Traceability | Embedded NATS tests now cover Core NATS, JetStream, reconnect/degraded health, max-deliveries advisory behavior, examples, and benchmarks; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while formal gates, live TLS/auth breadth, production SLO thresholds, and API polish remain open. |
+| Traceability | Embedded NATS tests cover Core NATS, JetStream, reconnect/degraded health, max-deliveries advisory behavior, examples, and benchmarks. Redacted live-dev NATS coverage is gated by `NATSX_LIVE_INTEGRATION=1`; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while formal gates, production TLS breadth, production SLO thresholds, and API polish remain open. |
 
 The inherited base-library release governance metadata remains on `v0.4.6` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
 
@@ -44,14 +44,15 @@ func (c *Client) Publish(ctx context.Context, env Envelope) error
 func (c *Client) Request(ctx context.Context, env Envelope) (Envelope, error)
 func (c *Client) Subscribe(subject string, handler Handler) (*nats.Subscription, error)
 func (c *Client) QueueSubscribe(subject, queue string, handler Handler) (*nats.Subscription, error)
-func (c *Client) JetStream() (*JetStreamClient, error)
+func (c *Client) JetStream() (nats.JetStreamContext, error)
+func (c *Client) JetStreamClient() (*JetStreamClient, error)
 
 type JetStreamClient struct {
     // wraps nats.JetStreamContext
 }
 ```
 
-Target 1.0 gaps still include higher-level consumer handles, broader configuration alias compatibility, live TLS/auth integration evidence, production SLO thresholds, and formal release gates.
+Target 1.0 gaps still include higher-level consumer handles, production TLS breadth, production SLO thresholds, and formal release gates. The repair baseline includes canonical `FOUNDATIONX_NATS_*` env loading with legacy `NATS_*` fallback plus a redacted live-dev integration gate.
 
 ## Installation
 
@@ -125,6 +126,26 @@ The cross-module configuration namespace is stable:
 
 Credentials, tokens, passwords, and connection URLs with embedded secrets must be redacted in errors, logs, health messages, and evidence artifacts.
 
+### Environment variables
+
+`ConfigFromEnv` and `LoadConfigFromEnv` read canonical `FOUNDATIONX_NATS_*` variables first, then fall back to legacy `NATS_*` variables when the canonical key is unset or empty. Supported suffixes are:
+
+| Suffix | Config field | Notes |
+| --- | --- | --- |
+| `NAME`, `CLIENT_NAME` | `Config.Name` | `NAME` wins over `CLIENT_NAME` within the same prefix. |
+| `URL` | `Config.URL` | Single endpoint. Do not embed secrets in evidence. |
+| `SERVERS` | `Config.Servers` | Comma-separated endpoints. |
+| `TOKEN` | `Config.Token` | Secret; never print raw value. |
+| `USERNAME` / `PASSWORD` | `Config.Username` / `Config.Password` | Secrets; never print raw values. |
+| `NKEY_SEED` | `Config.NKeySeed` | Secret; never print raw value. |
+| `CREDENTIALS_FILE` | `Config.CredentialsFile` | Path to NATS credentials file. |
+| `TIMEOUT` / `DRAIN_TIMEOUT` / `RECONNECT_WAIT` | duration fields | Go duration strings such as `2s` or `250ms`. |
+| `MAX_RECONNECTS` | `Config.MaxReconnects` | Integer. |
+| `ENABLE_JETSTREAM` | `Config.EnableJetStream` | Go boolean parser values (`true`, `false`, `1`, `0`). |
+
+Parse and validation errors name the invalid key or invalid URL kind but do not echo raw env values or credential-bearing endpoints.
+
+
 ## Verification
 
 Required local checks for this repository:
@@ -133,6 +154,7 @@ Required local checks for this repository:
 GOWORK=off go test ./pkg/natsx -count=1
 GOWORK=off go test -race ./pkg/natsx -count=1
 GOWORK=off go test ./pkg/natsx -bench 'BenchmarkEmbeddedNATS(Publish|Request|JetStreamPublish)$' -run '^$' -count=1 -benchtime=100x
+NATSX_LIVE_INTEGRATION=1 FOUNDATIONX_NATS_URL=<redacted-dev-url> FOUNDATIONX_NATS_USERNAME=<redacted> FOUNDATIONX_NATS_PASSWORD=<redacted> GOWORK=off go test ./pkg/natsx -run TestLiveNATSIntegration -count=1 -v
 GOWORK=off go test ./examples/... -count=1
 GOWORK=off go test ./... -count=1
 git diff --check
@@ -144,13 +166,13 @@ Required module-evidence check from `/home/ZoneCNH` after updating `module/natsx
 git diff --check -- module/natsx
 ```
 
-A 100/100 release requires synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status plus formal arbiter, live TLS/auth/config breadth, and production SLO evidence.
+A 100/100 release requires synchronized `module/natsx/SPEC.md` and `module/natsx/TRACEABILITY.md` status plus formal arbiter, production TLS breadth, and production SLO evidence.
 
 ## Current repair status
 
 - Target branch: `natsx`.
 - Primary package target: `pkg/natsx`.
-- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue/unsubscribe/drain/health, reconnect/degraded health, JetStream stream/consumer admin, publish, pull, envelope metadata, ack/nack/redelivery, max-deliveries advisory behavior, examples, and publish/request/JetStream publish benchmarks.
+- Embedded NATS evidence now covers Core NATS publish/subscribe/request/queue/unsubscribe/drain/health, reconnect/degraded health, JetStream stream/consumer admin, publish, pull, envelope metadata, ack/nack/redelivery, max-deliveries advisory behavior, examples, and publish/request/JetStream publish benchmarks; gated live-dev evidence covers auth config, publish/request, and JetStream smoke without printing secrets.
 - Known legacy residue: `pkg/templatex` and goal-runtime generator assets remain outside the natsx 1.0 API.
-- Remaining release gaps: formal four-source arbiter, live TLS/auth/config alias breadth, production SLO thresholds, and higher-level consumer lifecycle/API/observability polish.
+- Remaining release gaps: formal four-source arbiter, production SLO thresholds, release tag/publish governance, and higher-level consumer lifecycle/API/observability polish.
 - `/home/natsx/docs/l2/` is intentionally excluded from this repair unless the leader explicitly expands scope.

@@ -32,3 +32,14 @@ func TestConfigValidateRejectsInvalidEndpoint(t *testing.T) {
 		t.Fatalf("Validate() error kind = %v, want validation", err)
 	}
 }
+
+func TestConfigValidateInvalidEndpointDoesNotEchoEndpoint(t *testing.T) {
+	secretEndpoint := "nats://user:secret@example.test:bad-port"
+	err := (Config{URL: secretEndpoint}).Validate()
+	if err == nil {
+		t.Fatalf("Validate() error = nil, want invalid endpoint")
+	}
+	if strings.Contains(err.Error(), secretEndpoint) || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("Validate() leaked endpoint in error %q", err.Error())
+	}
+}

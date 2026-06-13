@@ -80,7 +80,7 @@ func (c Config) Validate() error {
 	for _, endpoint := range endpoints {
 		parsed, err := url.Parse(endpoint)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-			return validationError("Config.Validate", "invalid NATS server URL: "+endpoint, err)
+			return validationError("Config.Validate", "invalid NATS server URL", nil)
 		}
 	}
 	return nil

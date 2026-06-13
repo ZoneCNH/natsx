@@ -2,6 +2,7 @@ package natsx
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -118,4 +119,24 @@ func TestNoopMetricsMethodsAreSafe(t *testing.T) {
 	metrics.IncCounter("counter", map[string]string{"k": "v"})
 	metrics.ObserveHistogram("hist", 1, nil)
 	metrics.SetGauge("gauge", 1, nil)
+}
+
+func TestMetricNamesUseFoundationNATSPrefix(t *testing.T) {
+	metrics := []string{
+		MetricClientCreatedTotal,
+		MetricClientClosedTotal,
+		MetricClientErrorsTotal,
+		MetricClientHealthStatus,
+		MetricClientHealthLatencyMS,
+		MetricCoreMessagesTotal,
+		MetricCoreRequestDurationSeconds,
+		MetricJetStreamMessagesTotal,
+		MetricConnectionReconnectsTotal,
+		MetricConnectionDisconnectsTotal,
+	}
+	for _, metric := range metrics {
+		if !strings.HasPrefix(metric, "foundationx_nats_") {
+			t.Fatalf("metric %q does not use foundationx_nats_ prefix", metric)
+		}
+	}
 }
