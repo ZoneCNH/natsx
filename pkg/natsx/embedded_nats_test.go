@@ -121,7 +121,7 @@ func TestEmbeddedNATSCorePublishRequestAndQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() error = %v", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		t.Fatalf("Flush() after subscribe error = %v", err)
 	}
@@ -190,7 +190,7 @@ func TestEmbeddedNATSCorePublishRequestAndQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe() request error = %v", err)
 	}
-	defer requestSub.Unsubscribe()
+	defer func() { _ = requestSub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		t.Fatalf("Flush() after request subscribe error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestEmbeddedNATSCorePublishRequestAndQueue(t *testing.T) {
 		if err != nil {
 			t.Fatalf("QueueSubscribe() error = %v", err)
 		}
-		defer queueSub.Unsubscribe()
+		defer func() { _ = queueSub.Unsubscribe() }()
 	}
 	if err := client.Conn().Flush(); err != nil {
 		t.Fatalf("Flush() after queue subscribe error = %v", err)
@@ -290,7 +290,7 @@ func TestEmbeddedNATSCoreTimeoutUnsubscribeDrainAndHealth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe(timeout) error = %v", err)
 	}
-	defer timeoutSub.Unsubscribe()
+	defer func() { _ = timeoutSub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		t.Fatalf("Flush() after timeout subscribe error = %v", err)
 	}
@@ -549,7 +549,7 @@ func TestEmbeddedNATSJetStreamPublishAndPull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PullSubscribe() error = %v", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 
 	ack, err := jsClient.Publish(Envelope{
 		Subject:       jetStreamSubject,
@@ -642,7 +642,7 @@ func TestEmbeddedNATSJetStreamMaxDeliverAdvisory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe(max deliveries advisory) error = %v", err)
 	}
-	defer advisorySub.Unsubscribe()
+	defer func() { _ = advisorySub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		t.Fatalf("Flush() after advisory subscribe error = %v", err)
 	}
@@ -668,7 +668,7 @@ func TestEmbeddedNATSJetStreamMaxDeliverAdvisory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PullSubscribe(DLQ) error = %v", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 	if _, err := jsClient.Publish(Envelope{Subject: subject, EventID: "event-dlq-1", Data: []byte("poison")}); err != nil {
 		t.Fatalf("JetStream Publish(DLQ) error = %v", err)
 	}

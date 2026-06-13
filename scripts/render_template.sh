@@ -139,6 +139,7 @@ replace_in_text_files() {
 replace_in_text_files '{{MODULE_NAME}}' "$module_name"
 replace_in_text_files '{{MODULE_PATH}}' "$module_path"
 replace_in_text_files '{{PACKAGE_NAME}}' "$package_name"
+replace_in_text_files 'github.com/ZoneCNH/natsx' "$module_path"
 replace_in_text_files 'github.com/ZoneCNH/xlib-standard' "$module_path"
 replace_in_text_files 'github.com/ZoneCNH/baselib-template' "$module_path"
 replace_in_text_files 'xlib-standard' "$module_name"

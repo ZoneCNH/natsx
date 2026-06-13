@@ -8,6 +8,7 @@ import (
 
 func TestNewRejectsNilContextAndRecordsMetric(t *testing.T) {
 	metrics := &recordingMetrics{}
+	//nolint:staticcheck // verifies nil context validation.
 	client, err := New(nil, Config{}, WithMetrics(metrics))
 	if client != nil {
 		t.Fatalf("New(nil) client = %v, want nil", client)
@@ -67,6 +68,7 @@ func TestCoreOperationsRejectInvalidPreconditions(t *testing.T) {
 	}
 
 	client = &Client{metrics: NoopMetrics{}}
+	//nolint:staticcheck // verifies nil context validation.
 	if err := client.Publish(nil, NewEnvelope("subject", nil)); !IsKind(err, ErrorKindValidation) {
 		t.Fatalf("Publish(nil ctx) error = %v, want validation", err)
 	}
@@ -104,6 +106,7 @@ func TestJetStreamGuards(t *testing.T) {
 
 func TestHealthCheckNilAndCanceledContext(t *testing.T) {
 	client := &Client{cfg: Config{Name: "svc"}.withDefaults(), metrics: NoopMetrics{}}
+	//nolint:staticcheck // verifies nil context validation.
 	if status := client.HealthCheck(nil); status.Status != HealthUnhealthy || status.Message == "" {
 		t.Fatalf("HealthCheck(nil ctx) = %+v, want unhealthy with message", status)
 	}

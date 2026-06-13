@@ -28,7 +28,7 @@ func BenchmarkEmbeddedNATSPublish(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Subscribe() error = %v", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		b.Fatalf("Flush() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func BenchmarkEmbeddedNATSRequest(b *testing.B) {
 	if err != nil {
 		b.Fatalf("Subscribe() error = %v", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() { _ = sub.Unsubscribe() }()
 	if err := client.Conn().Flush(); err != nil {
 		b.Fatalf("Flush() error = %v", err)
 	}

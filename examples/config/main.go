@@ -34,7 +34,7 @@ func run(stdout io.Writer) error {
 	sanitized := cfg.Sanitize()
 
 	_, err := fmt.Fprintf(stdout,
-		"url=%s\nserver=%s\ncredential=%s\nusername=%s\npassword_secret=%s\nnkey=%s\ncreds=%s\n",
+		"url=%s\nserver=%s\ncredential=%s\nusername=%s\npassword_redacted=%s\nnkey=%s\ncreds=%s\n",
 		sanitized.URL,
 		sanitized.Servers[0],
 		sanitized.Token,
