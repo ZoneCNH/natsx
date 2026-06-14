@@ -2,8 +2,6 @@ module github.com/ZoneCNH/natsx
 
 go 1.25.0
 
-toolchain go1.26.4
-
 require (
 	github.com/nats-io/nats-server/v2 v2.14.2
 	github.com/nats-io/nats.go v1.52.0

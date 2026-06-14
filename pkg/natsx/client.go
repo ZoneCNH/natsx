@@ -60,6 +60,9 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Client, error) {
 		}
 		nopts = append(nopts, nkeyOpt)
 	}
+	if cfg.TLS {
+		nopts = append(nopts, nats.Secure(cfg.BuildTLSConfig()))
+	}
 	nopts = append(nopts, options.natsOptions...)
 
 	conn, err := nats.Connect(stringsJoin(cfg.endpoints()), nopts...)
