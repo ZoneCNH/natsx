@@ -1,6 +1,7 @@
 package natsx
 
 import (
+	"crypto/tls"
 	"net/url"
 	"strings"
 	"time"
@@ -22,6 +23,17 @@ type Config struct {
 	MaxReconnects   int
 	ReconnectWait   time.Duration
 	EnableJetStream bool
+	TLS             bool
+	TLSInsecure     bool
+}
+
+// BuildTLSConfig returns a *tls.Config suitable for nats.Secure() when TLSInsecure
+// is set. If TLS is not enabled or verification is not skipped, it returns nil.
+func (c Config) BuildTLSConfig() *tls.Config {
+	if !c.TLS || !c.TLSInsecure {
+		return nil
+	}
+	return &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in for dev only
 }
 
 type SanitizedConfig struct {
@@ -38,6 +50,8 @@ type SanitizedConfig struct {
 	MaxReconnects   int      `json:"max_reconnects"`
 	ReconnectWait   string   `json:"reconnect_wait"`
 	EnableJetStream bool     `json:"enable_jetstream"`
+	TLS             bool     `json:"tls"`
+	TLSInsecure     bool     `json:"tls_insecure"`
 }
 
 func (c Config) withDefaults() Config {
@@ -73,6 +87,9 @@ func (c Config) Validate() error {
 	if c.ReconnectWait < 0 {
 		return validationError("Config.Validate", "reconnect wait must not be negative", nil)
 	}
+	if c.TLSInsecure && !c.TLS {
+		return validationError("Config.Validate", "tls_insecure requires tls to be enabled", nil)
+	}
 	endpoints := c.endpoints()
 	if len(endpoints) == 0 {
 		return validationError("Config.Validate", "at least one NATS server URL is required", nil)
@@ -88,7 +105,7 @@ func (c Config) Validate() error {
 
 func (c Config) Sanitize() SanitizedConfig {
 	c = c.withDefaults()
-	return SanitizedConfig{Name: c.Name, URL: sanitizeDSN(c.URL), Servers: sanitizeServers(c.Servers), Token: sanitize.Secret(c.Token), Username: c.Username, Password: sanitize.Secret(c.Password), NKeySeed: sanitize.Secret(c.NKeySeed), CredentialsFile: redactPath(c.CredentialsFile), Timeout: c.Timeout.String(), DrainTimeout: c.DrainTimeout.String(), MaxReconnects: c.MaxReconnects, ReconnectWait: c.ReconnectWait.String(), EnableJetStream: c.EnableJetStream}
+	return SanitizedConfig{Name: c.Name, URL: sanitizeDSN(c.URL), Servers: sanitizeServers(c.Servers), Token: sanitize.Secret(c.Token), Username: c.Username, Password: sanitize.Secret(c.Password), NKeySeed: sanitize.Secret(c.NKeySeed), CredentialsFile: redactPath(c.CredentialsFile), Timeout: c.Timeout.String(), DrainTimeout: c.DrainTimeout.String(), MaxReconnects: c.MaxReconnects, ReconnectWait: c.ReconnectWait.String(), EnableJetStream: c.EnableJetStream, TLS: c.TLS, TLSInsecure: c.TLSInsecure}
 }
 
 func (c Config) endpoints() []string {

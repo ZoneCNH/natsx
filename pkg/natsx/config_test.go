@@ -43,3 +43,68 @@ func TestConfigValidateInvalidEndpointDoesNotEchoEndpoint(t *testing.T) {
 		t.Fatalf("Validate() leaked endpoint in error %q", err.Error())
 	}
 }
+
+func TestConfigValidateTLS(t *testing.T) {
+	t.Run("tls_insecure_requires_tls", func(t *testing.T) {
+		cfg := Config{URL: "nats://127.0.0.1:4222", TLSInsecure: true}
+		err := cfg.Validate()
+		if !IsKind(err, ErrorKindValidation) {
+			t.Fatalf("Validate() error kind = %v, want validation", err)
+		}
+		if !strings.Contains(err.Error(), "tls_insecure") {
+			t.Fatalf("Validate() error = %q, want tls_insecure mention", err.Error())
+		}
+	})
+
+	t.Run("tls_with_insecure_passes", func(t *testing.T) {
+		cfg := Config{URL: "nats://127.0.0.1:4222", TLS: true, TLSInsecure: true}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("tls_without_insecure_passes", func(t *testing.T) {
+		cfg := Config{URL: "nats://127.0.0.1:4222", TLS: true}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+}
+
+func TestConfigSanitizeWithTLS(t *testing.T) {
+	cfg := Config{URL: "nats://127.0.0.1:4222", TLS: true, TLSInsecure: true}
+	sanitized := cfg.Sanitize()
+	if !sanitized.TLS {
+		t.Fatalf("sanitized TLS = false, want true")
+	}
+	if !sanitized.TLSInsecure {
+		t.Fatalf("sanitized TLSInsecure = false, want true")
+	}
+}
+
+func TestConfigBuildTLSConfig(t *testing.T) {
+	t.Run("returns_nil_when_tls_disabled", func(t *testing.T) {
+		cfg := Config{TLS: false, TLSInsecure: true}
+		if tc := cfg.BuildTLSConfig(); tc != nil {
+			t.Fatalf("BuildTLSConfig() = %+v, want nil", tc)
+		}
+	})
+
+	t.Run("returns_nil_when_tls_secure_mode", func(t *testing.T) {
+		cfg := Config{TLS: true, TLSInsecure: false}
+		if tc := cfg.BuildTLSConfig(); tc != nil {
+			t.Fatalf("BuildTLSConfig() = %+v, want nil when not insecure", tc)
+		}
+	})
+
+	t.Run("returns_insecure_config", func(t *testing.T) {
+		cfg := Config{TLS: true, TLSInsecure: true}
+		tc := cfg.BuildTLSConfig()
+		if tc == nil {
+			t.Fatal("BuildTLSConfig() = nil, want *tls.Config")
+		}
+		if !tc.InsecureSkipVerify {
+			t.Fatalf("BuildTLSConfig().InsecureSkipVerify = false, want true")
+		}
+	})
+}

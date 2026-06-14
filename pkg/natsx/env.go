@@ -27,6 +27,8 @@ var natsEnvSuffixes = []string{
 	"MAX_RECONNECTS",
 	"RECONNECT_WAIT",
 	"ENABLE_JETSTREAM",
+	"TLS",
+	"TLS_INSECURE",
 }
 
 // ConfigFromEnv builds a Config from FoundationX NATS environment variables.
@@ -101,6 +103,20 @@ func LoadConfigFromEnv() (Config, error) {
 			return Config{}, envParseError(key, "boolean", err)
 		}
 		cfg.EnableJetStream = parsed
+	}
+	if value, key, ok := lookupNATSEnv("TLS"); ok {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, envParseError(key, "boolean", err)
+		}
+		cfg.TLS = parsed
+	}
+	if value, key, ok := lookupNATSEnv("TLS_INSECURE"); ok {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, envParseError(key, "boolean", err)
+		}
+		cfg.TLSInsecure = parsed
 	}
 
 	if err := cfg.Validate(); err != nil {

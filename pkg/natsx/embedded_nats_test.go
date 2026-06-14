@@ -3,8 +3,18 @@ package natsx
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -710,5 +720,183 @@ func TestEmbeddedNATSJetStreamMaxDeliverAdvisory(t *testing.T) {
 	}
 	if advisory.Subject == "" || len(advisory.Data) == 0 {
 		t.Fatalf("empty max-deliveries advisory: subject=%q data=%q", advisory.Subject, advisory.Data)
+	}
+}
+
+func generateSelfSignedCert(t testing.TB) (certFile, keyFile string) {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("rand.Int: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:     []string{"localhost"},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("x509.CreateCertificate: %v", err)
+	}
+
+	dir := t.TempDir()
+	certFile = filepath.Join(dir, "cert.pem")
+	keyFile = filepath.Join(dir, "key.pem")
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
+		t.Fatalf("WriteFile(cert): %v", err)
+	}
+
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("x509.MarshalECPrivateKey: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		t.Fatalf("WriteFile(key): %v", err)
+	}
+
+	return certFile, keyFile
+}
+
+func runEmbeddedTLSNATSServer(t testing.TB, jetStream bool) *natsserver.Server {
+	t.Helper()
+
+	certFile, keyFile := generateSelfSignedCert(t)
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("tls.LoadX509KeyPair: %v", err)
+	}
+
+	opts := &natsserver.Options{
+		Host:  "127.0.0.1",
+		Port:  -1,
+		NoLog: true,
+		NoSigs: true,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		},
+		JetStream: jetStream,
+	}
+	if jetStream {
+		opts.StoreDir = t.TempDir()
+	}
+
+	srv := natsserver.New(opts)
+	go srv.Start()
+	if !srv.ReadyForConnections(10 * time.Second) {
+		srv.Shutdown()
+		t.Fatal("embedded TLS NATS server did not become ready")
+	}
+
+	t.Cleanup(func() {
+		srv.Shutdown()
+		srv.WaitForShutdown()
+	})
+
+	return srv
+}
+
+func TestEmbeddedNATSTLSConnection(t *testing.T) {
+	srv := runEmbeddedTLSNATSServer(t, false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	client, err := New(ctx, Config{
+		Name:         "natsx-tls-test",
+		URL:          srv.ClientURL(),
+		Timeout:      2 * time.Second,
+		DrainTimeout: 2 * time.Second,
+		TLS:          true,
+		TLSInsecure:  true,
+	})
+	if err != nil {
+		t.Fatalf("New(TLS) error = %v", err)
+	}
+	defer func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer closeCancel()
+		if err := client.Close(closeCtx); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	}()
+
+	subject := mustSubject(t, "orders", "tls-test", "publish", 1)
+	received := make(chan Envelope, 1)
+	sub, err := client.Subscribe(subject, func(_ context.Context, env Envelope) (Envelope, error) {
+		received <- env
+		return Envelope{}, nil
+	})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer func() { _ = sub.Unsubscribe() }()
+	if err := client.Conn().Flush(); err != nil {
+		t.Fatalf("Flush() error = %v", err)
+	}
+
+	publishCtx, publishCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer publishCancel()
+	if err := client.Publish(publishCtx, Envelope{
+		Subject: subject,
+		EventID: "event-tls-1",
+		Data:    []byte("tls-message"),
+	}); err != nil {
+		t.Fatalf("Publish() over TLS error = %v", err)
+	}
+
+	select {
+	case got := <-received:
+		if !bytes.Equal(got.Data, []byte("tls-message")) {
+			t.Fatalf("TLS published data = %q, want tls-message", got.Data)
+		}
+		if got.EventID != "event-tls-1" {
+			t.Fatalf("TLS published EventID = %q, want event-tls-1", got.EventID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for TLS message")
+	}
+
+	health := client.HealthCheck(context.Background())
+	if health.Status != HealthHealthy {
+		t.Fatalf("HealthCheck(TLS) status = %q, want healthy: %s", health.Status, health.Message)
+	}
+}
+
+func TestEmbeddedNATSTLSRejectsSecureConnection(t *testing.T) {
+	srv := runEmbeddedTLSNATSServer(t, false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := New(ctx, Config{
+		Name:         "natsx-tls-reject-test",
+		URL:          srv.ClientURL(),
+		Timeout:      2 * time.Second,
+		DrainTimeout: 2 * time.Second,
+		TLS:          true,
+	})
+	if err == nil {
+		t.Fatal("New(TLS without insecure) expected error, got nil")
+	}
+	if !IsKind(err, ErrorKindConnection) {
+		t.Fatalf("New(TLS without insecure) error kind = %v, want connection", errorKind(err))
 	}
 }
