@@ -110,6 +110,22 @@ func TestVerifyPassAndFailurePaths(t *testing.T) {
 	}
 }
 
+func TestVerifyUsesReportThresholdWhenMinimumIsZero(t *testing.T) {
+	report := Report{
+		Value:     9.7,
+		Threshold: 9.8,
+		Status:    "passed",
+	}
+
+	err := Verify(report, 0)
+	if err == nil {
+		t.Fatal("Verify() error = nil; want report-threshold fallback failure")
+	}
+	if !strings.Contains(err.Error(), "below minimum 9.8") {
+		t.Fatalf("Verify() error = %q; want fallback threshold in error", err.Error())
+	}
+}
+
 func TestMarshalStableJSON(t *testing.T) {
 	report := Report{
 		Value:     9.8,
@@ -183,6 +199,25 @@ release-final-check: score-check
 	}
 	if !strings.Contains(dimension.Detail, "score --min >= 9.8") {
 		t.Fatalf("dimension detail = %q; want threshold explanation", dimension.Detail)
+	}
+}
+
+func TestScoreGateDimensionReportsMissingReleaseFinalCheck(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "Makefile")
+	content := `score-check:
+	score --min 9.8
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write Makefile fixture: %v", err)
+	}
+
+	dimension := scoreGateDimension(path)
+	if dimension.Passed {
+		t.Fatal("expected missing release-final-check target to fail")
+	}
+	if !strings.Contains(dimension.Detail, "release-final-check") {
+		t.Fatalf("dimension detail = %q; want release-final-check explanation", dimension.Detail)
 	}
 }
 
