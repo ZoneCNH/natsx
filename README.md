@@ -14,7 +14,7 @@ This repository is being repaired from an old base-library template into the rea
 | Examples | Go examples now import `pkg/natsx` and run embedded broker or sanitization smoke coverage. | Example smoke supports the repair baseline but is not release approval by itself. |
 | Traceability | Embedded NATS tests cover Core NATS, JetStream, reconnect/degraded health, max-deliveries advisory behavior, examples, and benchmarks. Redacted live-dev NATS coverage is gated by `NATSX_LIVE_INTEGRATION=1`; `module/natsx/TRACEABILITY.md` remains partial until every 1.0 acceptance group is proven. | Do not mark 100/100 while formal gates, production TLS breadth, production SLO thresholds, and API polish remain open. |
 
-The inherited base-library release governance metadata remains on `v0.4.6` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
+The inherited base-library release governance metadata remains on `v0.4.7` while this repository is repaired; that version marker is retained for existing release/version gates and is not a NATS 1.0 approval.
 
 ## 1.0 scope
 
