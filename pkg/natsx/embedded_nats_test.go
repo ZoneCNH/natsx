@@ -784,9 +784,9 @@ func runEmbeddedTLSNATSServer(t testing.TB, jetStream bool) *natsserver.Server {
 	}
 
 	opts := &natsserver.Options{
-		Host:  "127.0.0.1",
-		Port:  -1,
-		NoLog: true,
+		Host:   "127.0.0.1",
+		Port:   -1,
+		NoLog:  true,
 		NoSigs: true,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
