@@ -90,10 +90,9 @@ func (c Config) Validate() error {
 	if c.TLSInsecure && !c.TLS {
 		return validationError("Config.Validate", "tls_insecure requires tls to be enabled", nil)
 	}
+	// endpoints 恒非空：withDefaults() 已在上方保证 URL 非空（Servers 为空时回退默认 DSN），
+	// endpoints() 至少返回按逗号切分的 1 个端点，故原 len==0 守卫为不可达死分支，已移除。
 	endpoints := c.endpoints()
-	if len(endpoints) == 0 {
-		return validationError("Config.Validate", "at least one NATS server URL is required", nil)
-	}
 	for _, endpoint := range endpoints {
 		parsed, err := url.Parse(endpoint)
 		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
