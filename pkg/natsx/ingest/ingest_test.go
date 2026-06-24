@@ -186,9 +186,9 @@ func TestConsumerFetchReturnsMessagesWithAckNakTerm(t *testing.T) {
 	}
 	// Ack/Nak/Term 是 nats.Msg 方法，需真实 JetStream 才能验证语义；
 	// 这里仅断言 FetchMessage 暴露了它们（非 nil），durable+ManualAck 语义由集成测试覆盖。
-	if msgs[0].Ack == nil || msgs[0].Nak == nil || msgs[0].Term == nil {
-		t.Error("Ack/Nak/Term must be non-nil")
-	}
+	if msgs[0].Ack == nil || msgs[0].Nak == nil || msgs[0].NakWithDelay == nil || msgs[0].Term == nil {
+			t.Error("Ack/Nak/NakWithDelay/Term must be non-nil")
+		}
 }
 
 func TestConsumerFetchNoMessagesReturnsNilNoError(t *testing.T) {
