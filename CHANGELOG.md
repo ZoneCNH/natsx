@@ -1,5 +1,15 @@
 # 变更日志
 
+## v0.4.7 - 2026-06-21
+
+### 治理
+
+- 将项目发布版本、release manifest 默认版本、`goalcli` 治理版本和 release preflight 示例同步到 `v0.4.7`。
+
+### 兼容性
+
+- 本版本不改变 `pkg/templatex` 公共 API 形状；`Version` 元数据同步到 `v0.4.7`。
+
 ## 未发布
 
 暂无。

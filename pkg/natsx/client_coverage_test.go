@@ -135,6 +135,7 @@ func TestClientClose(t *testing.T) {
 
 		// Act - bypass the cleanup Close by clearing conn beforehand is not
 		// possible; just call Close with nil ctx directly.
+		//nolint:staticcheck // intentional nil-context branch coverage
 		err := client.Close(nil)
 
 		// Assert

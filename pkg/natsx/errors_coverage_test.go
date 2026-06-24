@@ -64,7 +64,7 @@ func TestErrorUnwrap(t *testing.T) {
 		cause := e.Unwrap()
 
 		// Assert
-		if cause != sentinel {
+		if !errors.Is(cause, sentinel) {
 			t.Fatalf("Unwrap() = %v, want sentinel", cause)
 		}
 		if !errors.Is(e, sentinel) {

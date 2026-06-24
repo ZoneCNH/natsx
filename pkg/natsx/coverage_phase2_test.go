@@ -237,7 +237,6 @@ func TestStreamConfigMatches(t *testing.T) {
 		{"SubjectDeleteMarkerTTL", func(r *StreamConfig) { r.SubjectDeleteMarkerTTL = time.Hour }},
 	}
 	for _, tc := range diffCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			req := clone()
 			tc.mutate(req)
@@ -348,7 +347,6 @@ func TestConsumerConfigMatches_RemainingFields(t *testing.T) {
 		{"Metadata", func(c *ConsumerConfig) { c.Metadata = map[string]string{"k": "v2"} }},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			req := clone()
 			tc.mutate(req)
@@ -397,7 +395,6 @@ func TestValidateSubjectToken_AllBranches(t *testing.T) {
 		{"valid with trim", "  orders  ", false},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			err := validateSubjectToken("natsx.test", tc.token)
 			if tc.wantErr && err == nil {
@@ -486,7 +483,6 @@ func TestConfig_Validate_ErrorBranches(t *testing.T) {
 		{"invalid url no host", Config{Name: "x", Servers: []string{"nats://"}}, "invalid NATS server URL"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.Validate()
 			if err == nil {
@@ -541,7 +537,6 @@ func TestLoadConfigFromEnv_ParseErrors(t *testing.T) {
 		{"bad tls insecure", map[string]string{"FOUNDATIONX_NATS_TLS_INSECURE": "nope"}},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			// 清掉相关 env 后再设置
 			for _, suffix := range natsEnvSuffixes {
