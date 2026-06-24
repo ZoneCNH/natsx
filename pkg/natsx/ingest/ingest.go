@@ -146,6 +146,8 @@ type FetchMessage struct {
 	Ack func() error
 	// Nak 显式否定确认，触发立即重投递。
 	Nak func() error
+	// NakWithDelay 否定确认并指定重投递延迟。delay 为 0 时等同于 Nak()。
+	NakWithDelay func(delay time.Duration) error
 	// Term 终止消息（不重投递），用于 poison message。
 	Term func() error
 }
@@ -229,13 +231,14 @@ func (c *Consumer) Fetch(ctx context.Context, max int) ([]FetchMessage, error) {
 	for _, msg := range msgs {
 		msg := msg // capture
 		out = append(out, FetchMessage{
-			Payload: append([]byte(nil), msg.Data...),
-			Subject: msg.Subject,
-			Headers: fromNatsHeader(msg.Header),
-			Ack:     func() error { return msg.Ack() },
-			Nak:     func() error { return msg.Nak() },
-			Term:    func() error { return msg.Term() },
-		})
+				Payload: append([]byte(nil), msg.Data...),
+				Subject: msg.Subject,
+				Headers: fromNatsHeader(msg.Header),
+				Ack:          func() error { return msg.Ack() },
+				Nak:          func() error { return msg.Nak() },
+				NakWithDelay: func(d time.Duration) error { return msg.NakWithDelay(d) },
+				Term:         func() error { return msg.Term() },
+			})
 	}
 	return out, nil
 }
