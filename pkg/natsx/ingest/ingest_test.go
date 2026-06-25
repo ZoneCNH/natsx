@@ -187,8 +187,64 @@ func TestConsumerFetchReturnsMessagesWithAckNakTerm(t *testing.T) {
 	// Ack/Nak/Term 是 nats.Msg 方法，需真实 JetStream 才能验证语义；
 	// 这里仅断言 FetchMessage 暴露了它们（非 nil），durable+ManualAck 语义由集成测试覆盖。
 	if msgs[0].Ack == nil || msgs[0].Nak == nil || msgs[0].NakWithDelay == nil || msgs[0].Term == nil {
-			t.Error("Ack/Nak/NakWithDelay/Term must be non-nil")
-		}
+		t.Error("Ack/Nak/NakWithDelay/Term must be non-nil")
+	}
+}
+
+func TestConsumerTermInvokesOnDeadLetterAtMaxDeliver(t *testing.T) {
+	msg := &nats.Msg{
+		Subject: "binance.market.um_perp.tick",
+		Data:    []byte("poison"),
+		Reply:   "$JS.ACK.BINANCE_MARKET.binance-server.2.10.1.0.0",
+	}
+	sub := &mockPullSubscription{msgs: []*nats.Msg{msg}}
+	called := 0
+	c, err := NewConsumer(&mockPullSubscriber{sub: sub}, ConsumerConfig{
+		Stream: "BINANCE_MARKET", Subject: "binance.market.um_perp.>", Durable: "binance-server", MaxDeliver: 2,
+		OnDeadLetter: func(msg FetchMessage) error {
+			called++
+			if string(msg.Payload) != "poison" {
+				t.Fatalf("dead-letter payload = %q", msg.Payload)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+
+	msgs, err := c.Fetch(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 msg, got %d", len(msgs))
+	}
+	_ = msgs[0].Term() // nats.Msg.Term needs a live connection; hook execution is the contract tested here.
+	if called != 1 {
+		t.Fatalf("OnDeadLetter calls = %d, want 1", called)
+	}
+}
+
+func TestConsumerTermSkipsOnDeadLetterBeforeMaxDeliver(t *testing.T) {
+	msg := &nats.Msg{Subject: "s", Data: []byte("retry"), Reply: "$JS.ACK.S.d.1.10.1.0.0"}
+	sub := &mockPullSubscription{msgs: []*nats.Msg{msg}}
+	called := 0
+	c, err := NewConsumer(&mockPullSubscriber{sub: sub}, ConsumerConfig{
+		Stream: "S", Subject: "s", Durable: "d", MaxDeliver: 2,
+		OnDeadLetter: func(FetchMessage) error { called++; return nil },
+	})
+	if err != nil {
+		t.Fatalf("NewConsumer: %v", err)
+	}
+	msgs, err := c.Fetch(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	_ = msgs[0].Term()
+	if called != 0 {
+		t.Fatalf("OnDeadLetter calls = %d, want 0", called)
+	}
 }
 
 func TestConsumerFetchNoMessagesReturnsNilNoError(t *testing.T) {

@@ -181,11 +181,13 @@ type PullSubscription interface {
 
 // Consumer 实现 FR-010 IngestConsumer 域适配器。
 type Consumer struct {
-	sub     JetStreamPullSubscriber
-	stream  string
-	subject string
-	durable string
-	maxWait time.Duration
+	sub          JetStreamPullSubscriber
+	stream       string
+	subject      string
+	durable      string
+	maxWait      time.Duration
+	maxDeliver   int
+	onDeadLetter func(FetchMessage) error
 }
 
 // ConsumerConfig 是 Consumer 配置。
@@ -194,6 +196,15 @@ type ConsumerConfig struct {
 	Subject string
 	Durable string
 	MaxWait time.Duration
+
+	// MaxDeliver mirrors the JetStream consumer MaxDeliver setting. When it is
+	// positive and a fetched message has reached that delivery count, Term calls
+	// OnDeadLetter before terminating the JetStream message.
+	MaxDeliver int
+	// OnDeadLetter is invoked by FetchMessage.Term for messages whose JetStream
+	// delivery count is greater than or equal to MaxDeliver. The hook lets callers
+	// persist/republish poison messages before Term prevents another delivery.
+	OnDeadLetter func(FetchMessage) error
 }
 
 // NewConsumer 构造 Consumer。
@@ -204,7 +215,18 @@ func NewConsumer(sub JetStreamPullSubscriber, cfg ConsumerConfig) (*Consumer, er
 	if cfg.MaxWait == 0 {
 		cfg.MaxWait = 5 * time.Second
 	}
-	return &Consumer{sub: sub, stream: cfg.Stream, subject: cfg.Subject, durable: cfg.Durable, maxWait: cfg.MaxWait}, nil
+	if cfg.MaxDeliver < 0 {
+		return nil, fmt.Errorf("ingest: max deliver must be non-negative")
+	}
+	return &Consumer{
+		sub:          sub,
+		stream:       cfg.Stream,
+		subject:      cfg.Subject,
+		durable:      cfg.Durable,
+		maxWait:      cfg.MaxWait,
+		maxDeliver:   cfg.MaxDeliver,
+		onDeadLetter: cfg.OnDeadLetter,
+	}, nil
 }
 
 // Fetch 拉取最多 max 条消息，返回 FetchMessage 列表。
@@ -230,17 +252,59 @@ func (c *Consumer) Fetch(ctx context.Context, max int) ([]FetchMessage, error) {
 	out := make([]FetchMessage, 0, len(msgs))
 	for _, msg := range msgs {
 		msg := msg // capture
-		out = append(out, FetchMessage{
-				Payload: append([]byte(nil), msg.Data...),
-				Subject: msg.Subject,
-				Headers: fromNatsHeader(msg.Header),
-				Ack:          func() error { return msg.Ack() },
-				Nak:          func() error { return msg.Nak() },
-				NakWithDelay: func(d time.Duration) error { return msg.NakWithDelay(d) },
-				Term:         func() error { return msg.Term() },
-			})
+		fetched := FetchMessage{
+			Payload:      append([]byte(nil), msg.Data...),
+			Subject:      msg.Subject,
+			Headers:      fromNatsHeader(msg.Header),
+			Ack:          func() error { return msg.Ack() },
+			Nak:          func() error { return msg.Nak() },
+			NakWithDelay: func(d time.Duration) error { return msg.NakWithDelay(d) },
+			Term:         func() error { return msg.Term() },
+		}
+		if c.shouldDeadLetter(msg) {
+			baseTerm := fetched.Term
+			hookMessage := fetched
+			hookMessage.Term = baseTerm
+			fetched.Term = func() error {
+				if err := c.onDeadLetter(hookMessage); err != nil {
+					return err
+				}
+				return baseTerm()
+			}
+		}
+		out = append(out, fetched)
 	}
 	return out, nil
+}
+
+func (c *Consumer) shouldDeadLetter(msg *nats.Msg) bool {
+	if c.onDeadLetter == nil || c.maxDeliver <= 0 || msg == nil {
+		return false
+	}
+	deliveries, ok := jetStreamDeliveries(msg)
+	return ok && deliveries >= uint64(c.maxDeliver)
+}
+
+func jetStreamDeliveries(msg *nats.Msg) (uint64, bool) {
+	metadata, err := msg.Metadata()
+	if err == nil {
+		return metadata.NumDelivered, true
+	}
+	// nats.Msg.Metadata requires a live subscription/connection. Keep the hook
+	// unit-testable by parsing the documented v1 ACK reply shape:
+	// $JS.ACK.<stream>.<consumer>.<delivered>.<sseq>.<cseq>.<tm>.<pending>.
+	parts := strings.Split(msg.Reply, ".")
+	if len(parts) == 9 && parts[0] == "$JS" && parts[1] == "ACK" {
+		var deliveries uint64
+		for _, ch := range parts[4] {
+			if ch < '0' || ch > '9' {
+				return 0, false
+			}
+			deliveries = deliveries*10 + uint64(ch-'0')
+		}
+		return deliveries, true
+	}
+	return 0, false
 }
 
 // fromNatsHeader 把 nats.Header 转为 map[string][]string。
